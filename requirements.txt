@@ -1,2 +1,5 @@
 streamlit
+supabase
 requests
+pandas
+st-image-carousel
