@@ -2,8 +2,8 @@ import streamlit as st
 import requests
 
 # 1. Credenciales (Asegúrate de que la llave sea la GIGANTE que sacaste de service_role)
-URL_TABLA = "https://ytdztvgfxwxgixriupml.supabase.co/rest/v1/fichas_muestras"
-LLAVE_GIGANTE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl0ZHp0dmdmeHd4Z2l4cml1cG1sIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTU4MzAwOSwiZXhwIjoyMDkxMTU5MDA5fQ.gbp2fHZRrYP3vR8MG1RW_8N7HuRsBhxZYBPl7tAC6z0" 
+URL_TABLA = st.secrets["SUPABASE_URL"] + "/rest/v1/fichas_muestras"
+LLAVE_GIGANTE = st.secrets["SUPABASE_KEY"]
 
 st.set_page_config(page_title="ERP Textil", page_icon="🧵")
 
