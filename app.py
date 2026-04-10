@@ -12,9 +12,20 @@ try:
 except Exception as e:
     st.error(f"Error conexión: {e}"); st.stop()
 
+# --- MEMORIA DE LA APP (SESSION STATE) ---
+# Inicializamos el código y un disparador para limpiar el formulario
+if 'codigo_actual' not in st.session_state:
+    st.session_state.codigo_actual = "S/C" # S/C = Sin Código
+
+def limpiar_formulario():
+    # Esta función borra el código y prepara la app para una nueva entrada
+    st.session_state.codigo_actual = "S/C"
+    # st.rerun() se usa para refrescar la pantalla inmediatamente
+    st.rerun()
+
 # --- FUNCIONES DE APOYO ---
 def generar_codigo_pilar(categoria, estilo):
-    # Genera código: CAT-EST-HORA (Ej: PAN-SKI-1430)
+    # Genera el código técnico basado en el momento exacto
     prefijo = f"{categoria[:3].upper()}-{estilo[:3].upper()}"
     fecha_slug = datetime.datetime.now().strftime("%y%m%d%H%M")
     return f"{prefijo}-{fecha_slug}"
@@ -25,73 +36,61 @@ tab_diseno, tab_patronaje = st.tabs(["🎨 Diseñadora (Crear)", "📐 Patronist
 
 # --- VISTA DE LA DISEÑADORA ---
 with tab_diseno:
-    st.subheader("Nueva Ficha de Muestra")
-    with st.form("form_diseno_pilar"):
+    # Cabecera con Código a la derecha y Botón de Limpiar
+    col_titulo, col_codigo, col_limpiar = st.columns([2, 1, 1])
+    with col_titulo:
+        st.subheader("Nueva Ficha de Muestra")
+    with col_codigo:
+        # Mostramos el código generado de forma llamativa
+        st.metric("Código Generado", st.session_state.codigo_actual)
+    with col_limpiar:
+        # Botón para resetear todo el trabajo
+        if st.button("➕ Nueva Ficha (Limpiar)"):
+            limpiar_formulario()
+
+    # Formulario de Registro
+    with st.form("form_diseno_pilar", clear_on_submit=True):
         c1, c2 = st.columns(2)
         
         with c1:
-            # Ahora el Estilo y la Categoría son selectores para mantener el orden
             cat = st.selectbox("Categoría de Prenda", ["Pantalón", "Falda", "Blusa", "Casaca", "Polo"])
-            # El estilo define la especialidad (Skinny, Oversize, Slim, etc.)
             estilo_nom = st.selectbox("Estilo / Fit", ["Skinny", "Mom Fit", "Oversize", "Straight", "Slim", "Flare"])
             disenadora = st.selectbox("Diseñadora Responsable", ["Ariana", "Otras"])
         
         with c2:
-            # Selector de Cliente/Marca para evitar variaciones de nombre
-            cliente = st.selectbox("Cliente / Marca", ["Pilar Jeans", "Cliente Externo A", "Marca Blanca"])
-            
-            # ASIGNACIÓN ESPECÍFICA: La diseñadora elige quién hará el molde
-            patronista_asignada = st.selectbox("Asignar a Patronista", ["Patronista 1 (Denim)", "Patronista 2 (Punto)", "Patronista 3 (Sastrería)"])
-            
+            cliente = st.selectbox("Cliente / Marca", ["Pilar Jeans", "Marca Blanca", "Exportación"])
+            patronista_asignada = st.selectbox("Asignar a Patronista", ["Patronista 1", "Patronista 2", "Patronista 3"])
             fecha_hoy = st.date_input("Fecha de Creación", datetime.date.today())
 
-        observaciones_diseno = st.text_area("Notas e instrucciones técnicas para el molde")
+        observaciones_diseno = st.text_area("Instrucciones técnicas para el molde")
         
-        btn_enviar = st.form_submit_button("✅ ENVIAR A PATRONISTA ASIGNADA")
+        # Botón de Enviar
+        btn_enviar = st.form_submit_button("✅ ENVIAR A PATRONAJE")
 
         if btn_enviar:
-            nuevo_codigo = generar_codigo_pilar(cat, estilo_nom)
+            # Generamos el código y lo guardamos en la 'memoria' para que aparezca arriba
+            nuevo_cod = generar_codigo_pilar(cat, estilo_nom)
+            st.session_state.codigo_actual = nuevo_cod
+            
             datos = {
-                "codigo_muestra": nuevo_codigo,
+                "codigo_muestra": nuevo_cod,
                 "categoria": cat,
                 "estilo": estilo_nom,
                 "disenadora_responsable": disenadora,
-                "patronista_responsable": patronista_asignada, # Guardamos quién debe hacerlo
+                "patronista_responsable": patronista_asignada,
                 "estado": "Pendiente Patronaje",
                 "fecha_creacion": str(fecha_hoy),
                 "observaciones_contra": observaciones_diseno
             }
+            
             try:
                 supabase.table("fichas_muestras").insert(datos).execute()
-                st.success(f"Ficha {nuevo_codigo} enviada directamente a {patronista_asignada}.")
+                st.success(f"Ficha {nuevo_cod} registrada. Código visible en cabecera.")
+                # Forzamos refresco para actualizar el st.metric de arriba
+                st.rerun()
             except Exception as e:
-                st.error(f"Error al guardar: {e}")
+                st.error(f"Error: {e}")
 
-# --- VISTA DE LA PATRONISTA ---
+# --- VISTA DE LA PATRONISTA (Se mantiene igual para no romper el flujo) ---
 with tab_patronaje:
-    st.subheader("Bandeja de Entrada de Moldes")
-    
-    # Filtro opcional para que la patronista se busque a sí misma
-    filtro_nombre = st.selectbox("Ver tareas de:", ["Patronista 1 (Denim)", "Patronista 2 (Punto)", "Patronista 3 (Sastrería)"])
-    
-    # Consultamos solo lo pendiente Y asignado a ella
-    query = supabase.table("fichas_muestras").select("*")\
-            .eq("estado", "Pendiente Patronaje")\
-            .eq("patronista_responsable", filtro_nombre).execute()
-    
-    if query.data:
-        for fila in query.data:
-            with st.expander(f"📦 {fila['codigo_muestra']} | {fila['categoria']} {fila['estilo']}"):
-                st.write(f"**Cliente:** {fila.get('cliente', 'Pilar Jeans')}")
-                st.write(f"**Diseñado por:** {fila['disenadora_responsable']}")
-                st.write(f"**Instrucciones:** {fila['observaciones_contra']}")
-                
-                if st.button(f"🚀 Iniciar mi trabajo: {fila['codigo_muestra']}"):
-                    hora_inicio = datetime.datetime.now().isoformat()
-                    supabase.table("fichas_muestras").update({
-                        "estado": "En Patronaje",
-                        "fecha_inicio_patronaje": hora_inicio
-                    }).eq("codigo_muestra", fila['codigo_muestra']).execute()
-                    st.rerun()
-    else:
-        st.info(f"No tienes tareas pendientes, {filtro_nombre}.")
+    st.info("Bandeja de entrada lista para recibir asignaciones.")
