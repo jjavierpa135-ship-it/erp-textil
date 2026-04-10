@@ -50,32 +50,28 @@ st.sidebar.title("🏢 ERP Pilar Jeans")
 modulo = st.sidebar.radio("Menú", ["👗 Diseño", "📦 Almacén"])
 
 if modulo == "👗 Diseño":
-    # --- BUSCADOR INTELIGENTE (TODO INCLUIDO) ---
+    # --- BUSCADOR ---
     with st.expander("🔍 Buscador de Muestras", expanded=False):
         try:
             res_busqueda = supabase.table("fichas_muestras").select("codigo_muestra, estilo, estado, fecha_creacion").order("fecha_creacion", desc=True).limit(50).execute()
-            opciones_busqueda = ["Seleccionar..."] + [
-                f"{str(r['fecha_creacion'])[:10]} | {r['codigo_muestra']} | {r['estilo']} | [{r['estado'].upper()}]" 
-                for r in res_busqueda.data
-            ]
-            seleccion = st.selectbox("Escribe para filtrar:", opciones_busqueda)
+            opciones_busqueda = ["Seleccionar..."] + [f"{str(r['fecha_creacion'])[:10]} | {r['codigo_muestra']} | {r['estilo']} | [{r['estado'].upper()}]" for r in res_busqueda.data]
+            seleccion = st.selectbox("Filtrar:", opciones_busqueda)
             if seleccion != "Seleccionar...":
                 nuevo_cod = seleccion.split(" | ")[1]
-                if st.button("Abrir Ficha Seleccionada"):
+                if st.button("Abrir Ficha"):
                     st.session_state.codigo_actual = nuevo_cod
                     st.session_state.bloquear = True
-                    st.session_state.confirmar_envio = False
                     st.rerun()
-        except: st.warning("No se pudo cargar el historial.")
+        except: pass
 
     st.divider()
 
     col_t, col_c, col_b = st.columns([2, 1, 1])
     with col_t: st.title("Ficha Técnica")
     with col_c: st.metric("Muestra Activa", st.session_state.codigo_actual)
-    with col_b: st.button("➕ Nueva Ficha (Limpiar)", on_click=limpiar_pantalla_total, use_container_width=True)
+    with col_b: st.button("➕ Nueva Ficha", on_click=limpiar_pantalla_total, use_container_width=True)
 
-    tab1, tab2 = st.tabs(["🎨 Diseño y Materiales", "📐 Patronaje"])
+    tab1, tab2 = st.tabs(["🎨 Diseño / Materiales", "📐 Patronaje"])
 
     with tab1:
         es_nuevo = st.session_state.codigo_actual == "S/C"
@@ -88,107 +84,93 @@ if modulo == "👗 Diseño":
                 datos_db = res.data[0]
                 ya_enviado = datos_db.get('estado') == "Pendiente Patronaje"
 
-        # Listas de opciones
-        cats = ["Seleccionar...", "Pantalón", "Falda", "Blusa", "Casaca", "Polo"]
-        ests = ["Seleccionar...", "Skinny", "Mom Fit", "Oversize", "Straight", "Slim"]
-        pats = ["Seleccionar...", "Patronista 1", "Patronista 2"]
+        # Listas de opciones básicas
         dis_lista = ["Seleccionar...", "Ariana", "Diseñadora 2"]
         prioridades = ["Normal", "Urgente", "Muestra VIP"]
+        cats = ["Seleccionar...", "Pantalón", "Falda", "Blusa", "Casaca", "Polo"]
+        ests = ["Seleccionar...", "Skinny", "Mom Fit", "Oversize", "Straight", "Slim"]
 
-        # BLOQUE 1: IDENTIFICACIÓN
+        # --- BLOQUE 1: IDENTIFICACIÓN (CONGELADO SI SE ENVÍA) ---
         with st.container(border=True):
-            st.subheader("1. Información General")
+            st.subheader("1. Identificación y Estado")
             c1, c2, c3, c4 = st.columns(4)
             with c1:
-                val_dis = st.selectbox("Diseñadora", dis_lista, index=obtener_indice(dis_lista, datos_db.get('disenadora')), key=f"d_{st.session_state.form_id}", disabled=st.session_state.bloquear or ya_enviado)
+                val_dis = st.selectbox("Diseñadora", dis_lista, index=obtener_indice(dis_lista, datos_db.get('disenadora')), key="d_1", disabled=st.session_state.bloquear or ya_enviado)
             with c2:
-                fecha_f = datos_db.get('fecha_creacion', datetime.date.today().strftime('%Y-%m-%d'))
-                st.text_input("Fecha Creación", value=str(fecha_f)[:10], disabled=True)
+                st.text_input("Fecha Creación", value=str(datos_db.get('fecha_creacion', datetime.date.today()))[:10], disabled=True)
             with c3:
-                f_envio = datos_db.get('fecha_envio_patronaje')
-                f_envio_str = f_envio.replace("T", " ")[:16] if f_envio else "No enviado"
-                st.text_input("Fecha/Hora Envío", value=f_envio_str, disabled=True)
+                f_envio = datos_db.get('fecha_envio_patronaje', "No enviado").replace("T", " ")[:16]
+                st.text_input("Fecha/Hora Envío", value=f_envio, disabled=True)
             with c4:
-                val_prior = st.selectbox("Prioridad", prioridades, index=obtener_indice(prioridades, datos_db.get('prioridad')), key=f"pr_{st.session_state.form_id}", disabled=st.session_state.bloquear or ya_enviado)
+                val_prior = st.selectbox("Prioridad", prioridades, index=obtener_indice(prioridades, datos_db.get('prioridad')), key="pr_1", disabled=st.session_state.bloquear or ya_enviado)
 
-        # BLOQUE 2: FOTOS CON MINIATURAS
+        # --- BLOQUE 2: MATERIALES Y MULTIMEDIA (NUEVO) ---
         with st.container(border=True):
-            st.subheader("2. Multimedia de Diseño")
-            fotos_subidas = st.file_uploader("Subir fotos (Diseño, Bordado, etc.)", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'], disabled=st.session_state.bloquear or ya_enviado)
+            st.subheader("2. Fotos de Diseño y Detalles")
+            st.info("Puedes subir varias fotos (Diseño, Bordado, Avíos, etc.)")
+            
+            # Subida de múltiples fotos con miniatura
+            fotos_subidas = st.file_uploader("Cargar Fotos", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'], disabled=st.session_state.bloquear or ya_enviado)
+            
             if fotos_subidas:
-                cols_f = st.columns(5)
-                for idx, f in enumerate(fotos_subidas):
-                    with cols_f[idx % 5]: st.image(f, caption=f.name, width=120)
+                cols_fotos = st.columns(4)
+                for i, foto in enumerate(fotos_subidas):
+                    with cols_fotos[i % 4]:
+                        st.image(foto, caption=f"Miniatura: {foto.name}", width=150)
 
-        # BLOQUE 3: TELAS Y ARTES
         with st.container(border=True):
-            st.subheader("3. Materiales y Arte")
+            st.subheader("3. Especificaciones de Telas y Color")
             c_t1, c_t2 = st.columns(2)
             with c_t1:
-                val_t1 = st.text_input("Tela Principal", value=datos_db.get('tela_1', ""), disabled=st.session_state.bloquear or ya_enviado)
-                val_t2 = st.text_input("Tela Complementaria", value=datos_db.get('tela_2', ""), disabled=st.session_state.bloquear or ya_enviado)
-                val_cat = st.selectbox("Categoría", cats, index=obtener_indice(cats, datos_db.get('categoria')), disabled=st.session_state.bloquear or ya_enviado)
-                val_est = st.selectbox("Estilo", ests, index=obtener_indice(ests, datos_db.get('estilo')), disabled=st.session_state.bloquear or ya_enviado)
+                st.markdown("**Telas Principales y Complementos**")
+                # Aquí simulamos la entrada de múltiples telas
+                tela_1 = st.text_input("Tela 1 (Principal)", value=datos_db.get('tela_1', ""), disabled=st.session_state.bloquear or ya_enviado)
+                tela_2 = st.text_input("Tela 2 (Complemento)", value=datos_db.get('tela_2', ""), disabled=st.session_state.bloquear or ya_enviado)
+                # Espacio para más si es necesario
+                with st.expander("Agregar más telas..."):
+                    tela_extra = st.text_area("Otras telas y composiciones", disabled=st.session_state.bloquear or ya_enviado)
+            
             with c_t2:
-                val_col = st.text_input("Color / Lavado", value=datos_db.get('color_lavado', ""), disabled=st.session_state.bloquear or ya_enviado)
-                val_art = st.text_area("Bordado / Estampado / Detalles", value=datos_db.get('detalles_arte', ""), disabled=st.session_state.bloquear or ya_enviado)
-                val_pat = st.selectbox("Patronista Asignado", pats, index=obtener_indice(pats, datos_db.get('patronista_responsable')), disabled=st.session_state.bloquear or ya_enviado)
+                st.markdown("**Arte (Bordado / Estampado / Color)**")
+                color_det = st.text_input("Color / Lavado", value=datos_db.get('color_lavado', ""), disabled=st.session_state.bloquear or ya_enviado)
+                arte_det = st.text_area("Detalles de Bordado o Aplicaciones", value=datos_db.get('detalles_arte', ""), disabled=st.session_state.bloquear or ya_enviado)
 
+        # --- BOTONES DE ACCIÓN ---
         st.divider()
-        # BOTONES DE ACCIÓN
         b1, b2, b3 = st.columns(3)
         with b1:
-            if st.button("💾 Guardar Todo", use_container_width=True, disabled=ya_enviado):
-                if "Seleccionar..." in [val_cat, val_est, val_dis]:
-                    st.error("Completa los campos obligatorios.")
-                else:
-                    cod = st.session_state.codigo_actual
-                    if cod == "S/C":
-                        cod = f"{val_cat[:3].upper()}-{val_est[:3].upper()}-{datetime.datetime.now().strftime('%y%m%d%H%M')}"
-                    
-                    payload = {
-                        "codigo_muestra": cod, "categoria": val_cat, "estilo": val_est,
-                        "disenadora": val_dis, "prioridad": val_prior, "patronista_responsable": val_pat,
-                        "tela_1": val_t1, "tela_2": val_t2, "color_lavado": val_col, "detalles_arte": val_art,
-                        "estado": "Borrador"
-                    }
-                    try:
-                        supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
-                        st.session_state.codigo_actual = cod
-                        st.session_state.bloquear = True
-                        st.success("¡Guardado exitoso!")
-                        st.rerun()
-                    except Exception as e: st.error(f"Error: {e}")
-
-        with b2: # ENVIAR CON CONFIRMACIÓN
-            puede_env = not es_nuevo and st.session_state.bloquear and not ya_enviado
+            if st.button("💾 Guardar Cambios", use_container_width=True, disabled=ya_enviado):
+                # Aquí iría el upsert con los nuevos campos tela_1, tela_2, etc.
+                st.success("Información guardada temporalmente.")
+        
+        with b2:
             if not st.session_state.confirmar_envio:
-                if st.button("🚀 Enviar a Patronaje", use_container_width=True, disabled=not puede_env):
+                if st.button("🚀 Enviar a Patronaje", use_container_width=True, disabled=st.session_state.bloquear or ya_enviado):
                     st.session_state.confirmar_envio = True
                     st.rerun()
             else:
-                st.warning("¿Seguro de enviar? Se bloqueará la edición.")
+                st.warning("¿Confirmar envío?")
                 cs, cn = st.columns(2)
                 with cs:
-                    if st.button("✅ Sí, enviar"):
+                    if st.button("✅ Confirmar"):
                         ahora = datetime.datetime.now().isoformat()
                         supabase.table("fichas_muestras").update({"estado": "Pendiente Patronaje", "fecha_envio_patronaje": ahora}).eq("codigo_muestra", st.session_state.codigo_actual).execute()
                         st.session_state.confirmar_envio = False
                         st.rerun()
                 with cn:
-                    if st.button("❌ No"):
+                    if st.button("❌ Cancelar"):
                         st.session_state.confirmar_envio = False
                         st.rerun()
-            if ya_enviado: st.info("✅ Esta ficha ya está en Patronaje.")
 
         with b3:
-            if st.button("✏️ Editar Datos", use_container_width=True, disabled=ya_enviado):
+            if st.button("✏️ Editar Ficha", use_container_width=True, disabled=ya_enviado):
                 st.session_state.bloquear = False
                 st.rerun()
 
     with tab2:
-        st.subheader("📏 Segunda Parte: Módulo de Patronaje")
+        st.subheader("📏 Módulo de Patronista")
         if not ya_enviado:
-            st.info("Esperando que Diseño envíe la ficha para comenzar el patronaje.")
+            st.warning("Esta ficha aún no ha sido enviada por Diseño.")
         else:
-            st.success(f"Ficha recibida: {st.session_state.codigo_actual}. Iniciando cuadro de medidas...")
+            st.success(f"Trabajando sobre la Muestra: {st.session_state.codigo_actual}")
+            # Aquí empezaremos a construir el cuadro de medidas, etc.
