@@ -136,7 +136,7 @@ if modulo == "👗 Diseño":
                 val_rec = st.text_area("Recomendaciones y Observaciones", value=datos_db.get('rec_observaciones', ""), disabled=st.session_state.bloquear or ya_enviado, height=100)
             val_obs_molde = st.text_input("Observaciones de Molde", value=datos_db.get('obs_molde', ""), disabled=st.session_state.bloquear or ya_enviado)
 
-        # 3. TELAS E INSUMOS (TABLA DINÁMICA)
+       # 3. TELAS E INSUMOS (CONECTADO A ALMACÉN)
         with st.container(border=True):
             st.subheader("3. Telas e Insumos")
             telas_lista = ["Seleccionar...", "Denim 12oz", "Denim 10oz", "Gabardina", "Jersey", "Tocuyo"]
@@ -147,35 +147,59 @@ if modulo == "👗 Diseño":
                 val_t2 = st.selectbox("Tela Complemento", telas_lista, index=obtener_indice(telas_lista, datos_db.get('tela_2')), disabled=st.session_state.bloquear or ya_enviado)
             
             st.divider()
-            st.markdown("**Detalle de Insumos**")
-            h1, h2, h3, h4, h5, h6 = st.columns([1.5, 1, 1, 1, 1, 0.5])
-            h1.caption("Insumo"); h2.caption("Color"); h3.caption("Diseño"); h4.caption("Tamaño"); h5.caption("Cant."); h6.caption("Acción")
+            st.markdown("**Detalle de Insumos desde Almacén**")
 
+            # --- LÓGICA DE CONEXIÓN A ALMACÉN ---
+            try:
+                res_mats = supabase.table("almacen_insumos").select("nombre, precio_unitario").execute()
+                opciones_mats = [m['nombre'] for m in res_mats.data] if res_mats.data else []
+                precios_mats = {m['nombre']: m['precio_unitario'] for m in res_mats.data} if res_mats.data else {}
+            except Exception as e:
+                st.error(f"Error al cargar almacén: {e}")
+                opciones_mats, precios_mats = [], {}
+
+            # Cabecera de la tabla
+            h = st.columns([2, 1, 1, 1, 0.5])
+            h[0].caption("Material"); h[1].caption("Cant."); h[2].caption("Precio U."); h[3].caption("Subtotal"); h[4].caption("")
+
+            total_insumos = 0.0
             for idx, item in enumerate(st.session_state.insumos_temp):
-                r1, r2, r3, r4, r5, r6 = st.columns([1.5, 1, 1, 1, 1, 0.5])
-                r1.write(item.get('codigo'))
-                r2.write(item.get('color'))
-                r3.write(item.get('diseno'))
-                r4.write(item.get('tamano'))
-                r5.write(str(item.get('cantidad')))
+                r = st.columns([2, 1, 1, 1, 0.5])
+                # Obtenemos precio de la sesión o del maestro si no existe
+                p_unit = item.get('precio', 0.0)
+                sub = item.get('cantidad', 0) * p_unit
+                total_insumos += sub
+                
+                r[0].write(item.get('codigo')) # Aquí guardamos el nombre del material
+                r[1].write(str(item.get('cantidad')))
+                r[2].write(f"${p_unit:.2f}")
+                r[3].write(f"${sub:.2f}")
+                
                 if not st.session_state.bloquear and not ya_enviado:
-                    if r6.button("🗑️", key=f"del_{idx}"):
+                    if r[4].button("🗑️", key=f"del_ins_{idx}"):
                         st.session_state.insumos_temp.pop(idx)
                         st.rerun()
 
-            if not st.session_state.bloquear and not ya_enviado:
-                with st.expander("➕ Añadir Insumo"):
-                    f1, f2, f3, f4, f5, f6 = st.columns([1.5, 1, 1, 1, 1, 1])
-                    i_cod = f1.text_input("Nombre", key="add_cod")
-                    i_col = f2.text_input("Color", key="add_col")
-                    i_dis = f3.text_input("Diseño", key="add_dis")
-                    i_tam = f4.text_input("Tamaño", key="add_tam")
-                    i_can = f5.number_input("Cant", min_value=0.0, key="add_can")
-                    if f6.button("Agregar"):
-                        if i_cod:
-                            st.session_state.insumos_temp.append({"codigo": i_cod, "color": i_col, "diseno": i_dis, "tamano": i_tam, "cantidad": i_can})
-                            st.rerun()
+            st.divider()
+            c_meta1, c_meta2 = st.columns([2, 1])
+            c_meta2.metric("COSTO TOTAL INSUMOS", f"${total_insumos:.2f}")
 
+            # Formulario para añadir (solo si no está bloqueado)
+            if not st.session_state.bloquear and not ya_enviado:
+                with st.expander("➕ Añadir Material de Almacén"):
+                    f1, f2, f3 = st.columns([2, 1, 1])
+                    insumo_nom = f1.selectbox("Seleccionar Insumo", ["Buscar..."] + opciones_mats, key="sel_ins_bus")
+                    insumo_cant = f2.number_input("Cantidad a usar", min_value=0.0, step=1.0, key="num_ins_can")
+                    if f3.button("Agregar a Ficha", use_container_width=True):
+                        if insumo_nom != "Buscar..." and insumo_cant > 0:
+                            p_real = precios_mats.get(insumo_nom, 0.0)
+                            st.session_state.insumos_temp.append({
+                                "codigo": insumo_nom, 
+                                "cantidad": insumo_cant,
+                                "precio": p_real
+                            })
+                            st.rerun()
+                            
         # 4. SERVICIOS
         with st.container(border=True):
             st.subheader("4. Servicios y Lavandería")
