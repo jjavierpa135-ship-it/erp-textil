@@ -11,15 +11,74 @@ try:
 except Exception as e:
     st.error(f"Error de conexión: {e}"); st.stop()
 
-# --- 3. ESTADOS DE SESIÓN ---
-if 'codigo_actual' not in st.session_state:
-    st.session_state.codigo_actual = "Cargando..."
-if 'bloquear' not in st.session_state:
-    st.session_state.bloquear = True
-if 'form_id' not in st.session_state:
-    st.session_state.form_id = 0
-if 'confirmar_envio' not in st.session_state:
-    st.session_state.confirmar_envio = False
+# BLOQUE 3: TELAS E INSUMOS (MODIFICADO)
+        with st.container(border=True):
+            st.subheader("3. Telas e Insumos")
+            
+            # --- SECCIÓN TELAS (Combos) ---
+            # Puedes editar esta lista con los nombres de tus telas reales
+            lista_telas = ["Seleccionar...", "Denim 12oz", "Denim 10oz", "Gabardina", "Jersey", "Tocuyo"]
+            
+            ci1, ci2 = st.columns(2)
+            with ci1:
+                val_t1 = st.selectbox("Tela Principal", lista_telas, 
+                                     index=obtener_indice(lista_telas, datos_db.get('tela_1')), 
+                                     key=f"t1_{st.session_state.form_id}",
+                                     disabled=st.session_state.bloquear or ya_enviado)
+            with ci2:
+                val_t2 = st.selectbox("Tela Complemento", lista_telas, 
+                                     index=obtener_indice(lista_telas, datos_db.get('tela_2')), 
+                                     key=f"t2_{st.session_state.form_id}",
+                                     disabled=st.session_state.bloquear or ya_enviado)
+
+            st.divider()
+
+            # --- SECCIÓN INSUMOS (Tabla Dinámica) ---
+            st.markdown("**Detalle de Insumos**")
+            
+            # Sincronizar con base de datos al cargar
+            if not st.session_state.insumos_temp and not es_nuevo:
+                st.session_state.insumos_temp = datos_db.get('insumos_detalle', [])
+
+            # Cabecera de la tabla
+            h1, h2, h3, h4, h5, h6 = st.columns([1.5, 1, 1, 1, 1, 0.5])
+            h1.caption("Código/Insumo")
+            h2.caption("Color")
+            h3.caption("Diseño")
+            h4.caption("Tamaño")
+            h5.caption("Cantidad")
+            h6.caption("Acción")
+
+            # Mostrar registros agregados
+            for idx, item in enumerate(st.session_state.insumos_temp):
+                r1, r2, r3, r4, r5, r6 = st.columns([1.5, 1, 1, 1, 1, 0.5])
+                r1.write(item.get('codigo', ''))
+                r2.write(item.get('color', ''))
+                r3.write(item.get('diseno', ''))
+                r4.write(item.get('tamano', ''))
+                r5.write(str(item.get('cantidad', '')))
+                if not st.session_state.bloquear and not ya_enviado:
+                    if r6.button("🗑️", key=f"del_ins_{idx}"):
+                        st.session_state.insumos_temp.pop(idx)
+                        st.rerun()
+
+            # Formulario de entrada (Solo si no está bloqueado)
+            if not st.session_state.bloquear and not ya_enviado:
+                with st.expander("➕ Adicionar línea de insumo", expanded=True):
+                    f1, f2, f3, f4, f5, f6 = st.columns([1.5, 1, 1, 1, 1, 1])
+                    new_cod = f1.text_input("Código", key="ins_cod")
+                    new_col = f2.text_input("Color", key="ins_col")
+                    new_dis = f3.text_input("Diseño", key="ins_dis")
+                    new_tam = f4.text_input("Tamaño", key="ins_tam")
+                    new_can = f5.number_input("Cant.", min_value=0.0, key="ins_can")
+                    if f6.button("Añadir", use_container_width=True):
+                        if new_cod:
+                            st.session_state.insumos_temp.append({
+                                "codigo": new_cod, "color": new_col, 
+                                "diseno": new_dis, "tamano": new_tam, "cantidad": new_can
+                            })
+                            st.rerun()
+                        else: st.warning("Escribe un código/nombre")
 
 # --- 4. FUNCIONES DE APOYO ---
 def limpiar_pantalla_total():
