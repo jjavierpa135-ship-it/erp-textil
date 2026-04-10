@@ -20,6 +20,8 @@ if 'form_id' not in st.session_state:
     st.session_state.form_id = 0
 if 'confirmar_envio' not in st.session_state:
     st.session_state.confirmar_envio = False
+if 'insumos_temp' not in st.session_state:
+    st.session_state.insumos_temp = []    
 
 # --- 4. FUNCIONES DE APOYO ---
 def limpiar_pantalla_total():
