@@ -18,11 +18,14 @@ if 'bloquear' not in st.session_state:
     st.session_state.bloquear = True
 if 'form_id' not in st.session_state:
     st.session_state.form_id = 0
+if 'confirmar_envio' not in st.session_state:
+    st.session_state.confirmar_envio = False
 
-# --- 4. FUNCIÓN DE LIMPIEZA (NUEVA FICHA) ---
+# --- 4. FUNCIÓN DE LIMPIEZA ---
 def limpiar_pantalla_total():
     st.session_state.codigo_actual = "S/C"
     st.session_state.bloquear = False
+    st.session_state.confirmar_envio = False
     st.session_state.form_id += 1 
     for key in list(st.session_state.keys()):
         if key.startswith(('c_', 'e_', 'p_', 'o_')):
@@ -58,7 +61,6 @@ if modulo == "👗 Diseño":
             res = supabase.table("fichas_muestras").select("*").eq("codigo_muestra", st.session_state.codigo_actual).execute()
             if res.data:
                 datos_db = res.data[0]
-                # Verificamos si la ficha ya fue enviada
                 if datos_db.get('estado') == "Pendiente Patronaje":
                     ya_enviado = True
 
@@ -88,10 +90,8 @@ if modulo == "👗 Diseño":
 
             st.divider()
             
-            # --- LÓGICA DE BOTONES ---
             b1, b2, b3 = st.columns(3)
             with b1:
-                # Se bloquea si ya fue enviado
                 if st.button("💾 Guardar", use_container_width=True, disabled=ya_enviado):
                     if val_cat == "Seleccionar..." or val_est == "Seleccionar...":
                         st.error("Seleccione Categoría y Estilo.")
@@ -113,13 +113,27 @@ if modulo == "👗 Diseño":
                         st.rerun()
 
             with b2:
-                # Solo se envía si: no es nuevo, no está en modo edición y NO ha sido enviado antes
                 puede_enviar = not es_nuevo and st.session_state.bloquear and not ya_enviado
                 
-                if st.button("🚀 Enviar", use_container_width=True, disabled=not puede_enviar):
-                    supabase.table("fichas_muestras").update({"estado": "Pendiente Patronaje"}).eq("codigo_muestra", st.session_state.codigo_actual).execute()
-                    st.success("Enviado. Ficha bloqueada para cambios.")
-                    st.rerun()
+                # Si no se ha activado la confirmación, mostrar botón normal
+                if not st.session_state.confirmar_envio:
+                    if st.button("🚀 Enviar", use_container_width=True, disabled=not puede_enviar):
+                        st.session_state.confirmar_envio = True
+                        st.rerun()
+                else:
+                    # Bloque de confirmación
+                    st.warning("¿Está seguro de enviar a patronaje?")
+                    c_si, c_no = st.columns(2)
+                    with c_si:
+                        if st.button("✅ Sí, enviar", use_container_width=True):
+                            supabase.table("fichas_muestras").update({"estado": "Pendiente Patronaje"}).eq("codigo_muestra", st.session_state.codigo_actual).execute()
+                            st.session_state.confirmar_envio = False
+                            st.success("Enviado con éxito.")
+                            st.rerun()
+                    with c_no:
+                        if st.button("❌ Cancelar", use_container_width=True):
+                            st.session_state.confirmar_envio = False
+                            st.rerun()
                 
                 if ya_enviado:
                     st.info("✅ Ficha en Patronaje")
@@ -127,11 +141,11 @@ if modulo == "👗 Diseño":
                     st.caption("⚠️ Guarda para enviar")
 
             with b3:
-                # El botón editar desaparece o se bloquea si ya fue enviado
                 if st.button("✏️ Editar", use_container_width=True, disabled=ya_enviado):
                     st.session_state.bloquear = False
+                    st.session_state.confirmar_envio = False # Reset confirmación al editar
                     st.rerun()
 
     with tab2:
         st.subheader("Bandeja de Patronaje")
-        st.info("Solo se muestran fichas con estado 'Pendiente Patronaje'")
+        st.info("Fichas en proceso...")
