@@ -132,16 +132,71 @@ if modulo == "👗 Diseño":
                 val_rec = st.text_area("Recomendaciones y Observaciones", value=datos_db.get('rec_observaciones', ""), disabled=st.session_state.bloquear or ya_enviado, height=100)
             val_obs_molde = st.text_input("Observaciones de Molde", value=datos_db.get('obs_molde', ""), disabled=st.session_state.bloquear or ya_enviado)
 
-        # BLOQUE 3: TELAS E INSUMOS
+# BLOQUE 3: TELAS E INSUMOS (MODIFICADO)
         with st.container(border=True):
             st.subheader("3. Telas e Insumos")
+            
+            # --- SECCIÓN TELAS (Combos) ---
+            telas_db = ["Seleccionar...", "Denim 12oz", "Denim 10oz", "Gabardina", "Jersey", "Tocuyo"]
+            
             ci1, ci2 = st.columns(2)
             with ci1:
-                val_t1 = st.text_input("Tela Principal", value=datos_db.get('tela_1', ""), disabled=st.session_state.bloquear or ya_enviado)
-                val_t2 = st.text_input("Tela Complemento", value=datos_db.get('tela_2', ""), disabled=st.session_state.bloquear or ya_enviado)
+                val_t1 = st.selectbox("Tela Principal", telas_db, 
+                                     index=obtener_indice(telas_db, datos_db.get('tela_1')), 
+                                     disabled=st.session_state.bloquear or ya_enviado)
             with ci2:
-                val_ins = st.text_area("Insumos", value=datos_db.get('insumos', ""), disabled=st.session_state.bloquear or ya_enviado, height=100)
+                val_t2 = st.selectbox("Tela Complemento", telas_db, 
+                                     index=obtener_indice(telas_db, datos_db.get('tela_2')), 
+                                     disabled=st.session_state.bloquear or ya_enviado)
 
+            st.divider()
+
+            # --- SECCIÓN INSUMOS (Tabla Dinámica) ---
+            st.markdown("**Detalle de Insumos**")
+            
+            # Cargar de DB si la lista está vacía y hay datos guardados
+            if not st.session_state.insumos_temp and datos_db.get('insumos_detalle'):
+                st.session_state.insumos_temp = datos_db.get('insumos_detalle', [])
+
+            # Cabecera de la tabla
+            h1, h2, h3, h4, h5, h6 = st.columns([1.5, 1, 1, 1, 1, 0.5])
+            h1.caption("Código/Insumo")
+            h2.caption("Color")
+            h3.caption("Diseño")
+            h4.caption("Tamaño")
+            h5.caption("Cantidad")
+            h6.caption("Acción")
+
+            # Mostrar registros
+            for idx, item in enumerate(st.session_state.insumos_temp):
+                r1, r2, r3, r4, r5, r6 = st.columns([1.5, 1, 1, 1, 1, 0.5])
+                r1.write(item.get('codigo', ''))
+                r2.write(item.get('color', ''))
+                r3.write(item.get('diseno', ''))
+                r4.write(item.get('tamano', ''))
+                r5.write(str(item.get('cantidad', '')))
+                if not st.session_state.bloquear and not ya_enviado:
+                    if r6.button("🗑️", key=f"del_ins_{idx}"):
+                        st.session_state.insumos_temp.pop(idx)
+                        st.rerun()
+
+            # Formulario para agregar (Adicionar línea por línea)
+            if not st.session_state.bloquear and not ya_enviado:
+                with st.expander("➕ Adicionar línea de insumo", expanded=True):
+                    f1, f2, f3, f4, f5, f6 = st.columns([1.5, 1, 1, 1, 1, 1])
+                    i_cod = f1.text_input("Código", key="add_cod")
+                    i_col = f2.text_input("Color", key="add_col")
+                    i_dis = f3.text_input("Diseño", key="add_dis")
+                    i_tam = f4.text_input("Tamaño", key="add_tam")
+                    i_can = f5.number_input("Cant.", min_value=0.0, key="add_can")
+                    if f6.button("Añadir", use_container_width=True):
+                        if i_cod:
+                            st.session_state.insumos_temp.append({
+                                "codigo": i_cod, "color": i_col, 
+                                "diseno": i_dis, "tamano": i_tam, "cantidad": i_can
+                            })
+                            st.rerun()
+                        else: st.warning("Falta Código")
         # BLOQUE 4: SERVICIOS Y LAVANDERÍA
         with st.container(border=True):
             st.subheader("4. Servicios y Lavandería")
@@ -190,7 +245,7 @@ if modulo == "👗 Diseño":
         st.divider()
         # BOTONES
         b1, b2, b3 = st.columns(3)
-        with b1:
+      with b1:
             if st.button("💾 Guardar Todo", use_container_width=True, disabled=ya_enviado):
                 if "Seleccionar..." in [val_cat, val_est, val_dis]:
                     st.error("Faltan datos en el Bloque 1.")
@@ -198,16 +253,30 @@ if modulo == "👗 Diseño":
                     cod = st.session_state.codigo_actual
                     if cod == "S/C":
                         cod = f"{val_cat[:3].upper()}-{val_est[:3].upper()}-{datetime.datetime.now().strftime('%y%m%d%H%M')}"
+                    
+                    # PAYLOAD COMPLETO PARA NO PERDER DATOS
                     payload = {
-                                "codigo_muestra": cod,
-                                "categoria": val_cat,
-                                # ... otros campos ...
-                                "tela_1": val_t1,
-                                "tela_2": val_t2,
-                                "insumos_detalle": st.session_state.insumos_temp, # <--- ESTA ES LA CLAVE
-                                "curva_tallas": curva_datos,
-                                # ... resto de campos ...
-                            }
+                        "codigo_muestra": cod, 
+                        "categoria": val_cat, 
+                        "estilo": val_est, 
+                        "disenadora": val_dis,
+                        "prioridad": val_prior, 
+                        "patronista_responsable": val_pat, 
+                        "observaciones_contra": val_obs_dis,
+                        "desc_prenda": val_desc, 
+                        "ref_entalle": val_entalle, 
+                        "procesos_aux": val_proc,
+                        "rec_observaciones": val_rec, 
+                        "obs_molde": val_obs_molde, 
+                        "tela_1": val_t1, 
+                        "tela_2": val_t2,
+                        "insumos_detalle": st.session_state.insumos_temp, # La tabla nueva
+                        "color_lavado": val_lav, 
+                        "detalles_arte": val_art,
+                        "curva_tallas": curva_datos, 
+                        "cantidad_paquetes": val_paq, 
+                        "estado": "Borrador"
+                    }
                     try:
                         supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
                         st.session_state.codigo_actual = cod
@@ -215,6 +284,7 @@ if modulo == "👗 Diseño":
                         st.success(f"Guardado: {cod}")
                         st.rerun()
                     except Exception as e: st.error(f"Error: {e}")
+        
 
         with b2:
             puede_env = not es_nuevo and st.session_state.bloquear and not ya_enviado
