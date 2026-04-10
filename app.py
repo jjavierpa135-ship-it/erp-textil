@@ -50,29 +50,32 @@ st.sidebar.title("🏢 ERP Pilar Jeans")
 modulo = st.sidebar.radio("Menú", ["👗 Diseño", "📦 Almacén"])
 
 if modulo == "👗 Diseño":
-    # --- SECCIÓN DE BÚSQUEDA INTELIGENTE ---
-    with st.expander("🔍 Buscador de Muestras (Escribe código o nombre)", expanded=False):
+    # --- SECCIÓN DE BÚSQUEDA CON ESTADO ---
+    with st.expander("🔍 Buscador de Muestras", expanded=False):
         try:
-            # Traemos las últimas 50 para que tenga de dónde filtrar
-            res_busqueda = supabase.table("fichas_muestras").select("codigo_muestra, estilo").order("fecha_creacion", desc=True).limit(50).execute()
-            opciones_busqueda = ["Seleccionar..."] + [f"{r['codigo_muestra']} | {r['estilo']}" for r in res_busqueda.data]
+            # Traemos código, estilo y estado para mostrar en el desplegable
+            res_busqueda = supabase.table("fichas_muestras").select("codigo_muestra, estilo, estado").order("fecha_creacion", desc=True).limit(50).execute()
             
-            seleccion = st.selectbox("Buscar por código o modelo:", opciones_busqueda)
+            # Formateamos la opción: CODIGO | ESTILO | [ESTADO]
+            opciones_busqueda = ["Seleccionar..."] + [
+                f"{r['codigo_muestra']} | {r['estilo']} | [{r['estado'].upper()}]" 
+                for r in res_busqueda.data
+            ]
+            
+            seleccion = st.selectbox("Escribe para filtrar por código, modelo o estado:", opciones_busqueda)
             
             if seleccion != "Seleccionar...":
-                # Extraemos solo el código (lo que está antes del '|')
                 nuevo_cod = seleccion.split(" | ")[0]
-                if st.button("Abrir Ficha"):
+                if st.button("Abrir Ficha Seleccionada"):
                     st.session_state.codigo_actual = nuevo_cod
                     st.session_state.bloquear = True
                     st.session_state.confirmar_envio = False
                     st.rerun()
         except:
-            st.warning("No se pudieron cargar las muestras recientes.")
+            st.warning("No se pudo cargar el historial.")
 
     st.divider()
 
-    # Cabecera de la Ficha
     col_t, col_c, col_b = st.columns([2, 1, 1])
     with col_t: st.title("Ficha Técnica")
     with col_c: st.metric("Muestra Activa", st.session_state.codigo_actual)
@@ -101,7 +104,6 @@ if modulo == "👗 Diseño":
         prioridades = ["Normal", "Urgente", "Muestra VIP"]
 
         with st.container():
-            # FILA 1
             c1, c2, c3 = st.columns(3)
             with c1:
                 idx_d = obtener_indice(dis_lista, datos_db.get('disenadora')) if not es_nuevo else 0
@@ -115,7 +117,6 @@ if modulo == "👗 Diseño":
                 val_prior = st.selectbox("Prioridad", prioridades, index=idx_pr, key=f"pr_{st.session_state.form_id}", 
                                          disabled=st.session_state.bloquear or ya_enviado)
 
-            # FILA 2
             c4, c5, c6 = st.columns(3)
             with c4:
                 idx_c = obtener_indice(cats, datos_db.get('categoria')) if not es_nuevo else 0
@@ -135,7 +136,6 @@ if modulo == "👗 Diseño":
 
             st.divider()
             
-            # BOTONES
             b1, b2, b3 = st.columns(3)
             with b1: # GUARDAR
                 if st.button("💾 Guardar", use_container_width=True, disabled=ya_enviado):
