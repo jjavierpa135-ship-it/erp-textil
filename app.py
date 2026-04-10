@@ -21,7 +21,7 @@ if 'form_id' not in st.session_state:
 if 'confirmar_envio' not in st.session_state:
     st.session_state.confirmar_envio = False
 
-# --- 4. FUNCIÓN DE LIMPIEZA TOTAL ---
+# --- 4. FUNCIONES DE APOYO ---
 def limpiar_pantalla_total():
     st.session_state.codigo_actual = "S/C"
     st.session_state.bloquear = False
@@ -31,10 +31,16 @@ def limpiar_pantalla_total():
         if key.startswith(('c_', 'e_', 'p_', 'o_', 'd_', 'pr_')):
             del st.session_state[key]
 
+def obtener_indice(lista, valor):
+    try:
+        return lista.index(valor)
+    except (ValueError, KeyError):
+        return 0
+
 # --- 5. CARGA INICIAL ---
 if st.session_state.codigo_actual == "Cargando...":
     try:
-        res = supabase.table("fichas_muestras").select("*").order("fecha_creacion", desc=True).limit(1).execute()
+        res = supabase.table("fichas_muestras").select("codigo_muestra").order("fecha_creacion", desc=True).limit(1).execute()
         st.session_state.codigo_actual = res.data[0]['codigo_muestra'] if res.data else "S/C"
     except:
         st.session_state.codigo_actual = "S/C"
@@ -44,11 +50,34 @@ st.sidebar.title("🏢 ERP Pilar Jeans")
 modulo = st.sidebar.radio("Menú", ["👗 Diseño", "📦 Almacén"])
 
 if modulo == "👗 Diseño":
+    # --- SECCIÓN DE BÚSQUEDA INTELIGENTE ---
+    with st.expander("🔍 Buscador de Muestras (Escribe código o nombre)", expanded=False):
+        try:
+            # Traemos las últimas 50 para que tenga de dónde filtrar
+            res_busqueda = supabase.table("fichas_muestras").select("codigo_muestra, estilo").order("fecha_creacion", desc=True).limit(50).execute()
+            opciones_busqueda = ["Seleccionar..."] + [f"{r['codigo_muestra']} | {r['estilo']}" for r in res_busqueda.data]
+            
+            seleccion = st.selectbox("Buscar por código o modelo:", opciones_busqueda)
+            
+            if seleccion != "Seleccionar...":
+                # Extraemos solo el código (lo que está antes del '|')
+                nuevo_cod = seleccion.split(" | ")[0]
+                if st.button("Abrir Ficha"):
+                    st.session_state.codigo_actual = nuevo_cod
+                    st.session_state.bloquear = True
+                    st.session_state.confirmar_envio = False
+                    st.rerun()
+        except:
+            st.warning("No se pudieron cargar las muestras recientes.")
+
+    st.divider()
+
+    # Cabecera de la Ficha
     col_t, col_c, col_b = st.columns([2, 1, 1])
     with col_t: st.title("Ficha Técnica")
-    with col_c: st.metric("Código Activo", st.session_state.codigo_actual)
+    with col_c: st.metric("Muestra Activa", st.session_state.codigo_actual)
     with col_b: 
-        st.button("➕ Nueva Ficha (Limpiar)", on_click=limpiar_pantalla_total)
+        st.button("➕ Nueva Ficha (Limpiar)", on_click=limpiar_pantalla_total, use_container_width=True)
 
     tab1, tab2 = st.tabs(["🎨 Diseño", "📐 Patronaje"])
 
@@ -64,21 +93,15 @@ if modulo == "👗 Diseño":
                 if datos_db.get('estado') == "Pendiente Patronaje":
                     ya_enviado = True
 
-        # Listas de opciones (Asegúrate de que los nombres aquí sean los que quieres usar)
+        # Listas
         cats = ["Seleccionar...", "Pantalón", "Falda", "Blusa", "Casaca", "Polo"]
         ests = ["Seleccionar...", "Skinny", "Mom Fit", "Oversize", "Straight", "Slim"]
         pats = ["Seleccionar...", "Patronista 1", "Patronista 2", "Patronista 3"]
-        dis_lista = ["Seleccionar...", "Diseñadora 1", "Diseñadora 2", "Diseñadora 3"]
+        dis_lista = ["Seleccionar...", "Ariana", "Diseñadora 2", "Diseñadora 3"]
         prioridades = ["Normal", "Urgente", "Muestra VIP"]
 
-        # --- FUNCIÓN DE BÚSQUEDA SEGURA DE ÍNDICE ---
-        def obtener_indice(lista, valor):
-            try:
-                return lista.index(valor)
-            except ValueError:
-                return 0 # Si no lo encuentra, devuelve "Seleccionar..."
-
         with st.container():
+            # FILA 1
             c1, c2, c3 = st.columns(3)
             with c1:
                 idx_d = obtener_indice(dis_lista, datos_db.get('disenadora')) if not es_nuevo else 0
@@ -92,6 +115,7 @@ if modulo == "👗 Diseño":
                 val_prior = st.selectbox("Prioridad", prioridades, index=idx_pr, key=f"pr_{st.session_state.form_id}", 
                                          disabled=st.session_state.bloquear or ya_enviado)
 
+            # FILA 2
             c4, c5, c6 = st.columns(3)
             with c4:
                 idx_c = obtener_indice(cats, datos_db.get('categoria')) if not es_nuevo else 0
@@ -111,11 +135,12 @@ if modulo == "👗 Diseño":
 
             st.divider()
             
+            # BOTONES
             b1, b2, b3 = st.columns(3)
             with b1: # GUARDAR
                 if st.button("💾 Guardar", use_container_width=True, disabled=ya_enviado):
                     if "Seleccionar..." in [val_cat, val_est, val_dis]:
-                        st.error("Por favor complete los campos obligatorios.")
+                        st.error("Campos incompletos.")
                     else:
                         cod = st.session_state.codigo_actual
                         if cod == "S/C":
@@ -132,8 +157,7 @@ if modulo == "👗 Diseño":
                             st.session_state.bloquear = True
                             st.success(f"Guardado: {cod}")
                             st.rerun()
-                        except Exception as e:
-                            st.error(f"Error: {e}")
+                        except Exception as e: st.error(f"Error: {e}")
 
             with b2: # ENVIAR
                 puede_enviar = not es_nuevo and st.session_state.bloquear and not ya_enviado
@@ -162,4 +186,4 @@ if modulo == "👗 Diseño":
 
     with tab2:
         st.subheader("Bandeja de Patronaje")
-        st.info("Revisando muestras...")
+        st.info("Revisando muestras en proceso...")
