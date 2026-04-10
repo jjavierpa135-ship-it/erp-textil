@@ -6,88 +6,82 @@ import datetime
 # --- CONFIGURACIÓN E INTERFAZ ---
 st.set_page_config(page_title="ERP Pilar Jeans", page_icon="👗", layout="wide")
 
-# --- CONEXIÓN A BASE DE DATOS ---
+# --- CONEXIÓN A BASE DE DATOS (Se mantiene igual) ---
 try:
     supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 except Exception as e:
     st.error(f"Error conexión: {e}"); st.stop()
 
-# --- FUNCIONES DE APOYO ---
-def generar_codigo(cat, est):
-    # Crea código tipo PANT-SKI-001 basado en categoría y estilo
-    prefix = f"{cat[:3].upper()}-{est[:3].upper()}"
-    return f"{prefix}-{datetime.datetime.now().strftime('%M%S')}"
+# --- MEJORA PUNTO 1: LÓGICA DE IDENTIFICACIÓN ---
+def generar_codigo_pilar(categoria, estilo):
+    """Genera código automático: CAT-EST-AÑO-CORRELATIVO"""
+    prefijo = f"{categoria[:3].upper()}-{estilo[:3].upper()}"
+    fecha_slug = datetime.datetime.now().strftime("%y%m%d%H%M")
+    return f"{prefijo}-{fecha_slug}"
 
-# --- MENÚ LATERAL ---
-modulo = st.sidebar.radio("Módulos", ["👗 Ficha de Muestras", "👥 Proveedores"])
+st.title("👗 Módulo de Diseño y Patronaje")
 
-if modulo == "👗 Ficha de Muestras":
-    st.title("👗 Desarrollo de Ficha Técnica")
-    tab1, tab2 = st.tabs(["📝 Registro Técnico", "🔍 Historial"])
+# Pestañas para separar el flujo de trabajo
+tab_diseno, tab_patronaje = st.tabs(["🎨 Diseñadora (Crear)", "📐 Patronista (Ejecutar)"])
 
-    with tab1:
-        with st.form("form_pilar"):
-            # SECCIÓN 1: Identificación
-            st.subheader("1. Identificación de Estilo")
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                cat = st.selectbox("Categoría", ["Pantalón", "Falda", "Blusa", "Casaca", "Polo"])
-                est = st.text_input("Estilo", placeholder="Ej: Skinny")
-            with c2:
-                disenadora = st.selectbox("Diseñadora", ["Ariana", "Otras"])
-                patronista = st.selectbox("Patronista", ["Patronista 1", "Patronista 2"])
-            with c3:
-                codigo = generar_codigo(cat, est)
-                st.info(f"Código sugerido: {codigo}")
+# --- VISTA DE LA DISEÑADORA ---
+with tab_diseno:
+    st.subheader("Nueva Ficha de Muestra")
+    with st.form("form_diseno_pilar"):
+        c1, c2 = st.columns(2)
+        with c1:
+            cat = st.selectbox("Categoría de Prenda", ["Pantalón", "Falda", "Blusa", "Casaca", "Polo"])
+            estilo_nom = st.text_input("Nombre del Estilo", placeholder="Ej: Skinny High Waist")
+            disenadora = st.selectbox("Diseñadora Responsable", ["Ariana", "Otras"])
+        
+        with c2:
+            cliente = st.text_input("Cliente / Marca", value="Pilar Jeans")
+            fecha_hoy = st.date_input("Fecha de Creación", datetime.date.today())
+            # El código se genera internamente al guardar
+            st.info("El código correlativo se generará automáticamente al enviar.")
 
-            # SECCIÓN 2: Ingeniería de Tallas y Cantidades
-            st.subheader("2. Curva de Tallas y Cálculo")
-            c4, c5, c6 = st.columns(3)
-            with c4:
-                tallas_sel = st.multiselect("Tallas", ["26", "28", "30", "32", "34", "36"], default=["28", "30", "32"])
-            with c5:
-                ratio = st.text_input("Ratio (Ej: 2,2,1)", value="1,1,1")
-                series = st.number_input("Cantidad de Series", min_value=1, value=1)
-            with c6:
-                # Lógica de cálculo: suma ratio * series
-                total_prendas = sum([int(x) for x in ratio.split(',') if x.strip().isdigit()]) * series
-                st.metric("Total Prendas a Cortar", total_prendas)
+        observaciones_diseno = st.text_area("Notas para la Patronista")
+        
+        btn_enviar = st.form_submit_button("✅ ENVIAR A PATRONAJE")
 
-            # SECCIÓN 3: Materiales y Proveedores
-            st.subheader("3. Materiales e Insumos")
-            c7, c8 = st.columns(2)
-            with c7:
-                t_pri = st.text_input("Tela Principal")
-                t_com = st.text_input("Tela Complementaria")
-            with c8:
-                # Jalamos proveedores de la tabla que creaste
-                prov_res = supabase.table("proveedores").select("nombre").execute()
-                lista_prov = [p['nombre'] for p in prov_res.data]
-                prov_sel = st.selectbox("Proveedor de Tela", lista_prov if lista_prov else ["Sin proveedores"])
-                insumos = st.text_area("Otros Insumos (Botones, hilos, remaches...)")
+        if btn_enviar:
+            if estilo_nom:
+                nuevo_codigo = generar_codigo_pilar(cat, estilo_nom)
+                datos = {
+                    "codigo_muestra": nuevo_codigo,
+                    "categoria": cat,
+                    "estilo": estilo_nom,
+                    "disenadora_responsable": disenadora,
+                    "estado": "Pendiente Patronaje", # Estado inicial
+                    "fecha_creacion": str(fecha_hoy),
+                    "observaciones_contra": observaciones_diseno
+                }
+                # Guardamos en Supabase
+                supabase.table("fichas_muestras").insert(datos).execute()
+                st.success(f"Ficha {nuevo_codigo} enviada con éxito. ¡Buen trabajo, {disenadora}!")
+            else:
+                st.warning("Por favor, ingresa el nombre del estilo.")
 
-            # SECCIÓN 4: Gestión Visual (Moodboard)
-            st.subheader("4. Moodboard y Archivos")
-            f1, f2, f3, f4 = st.columns(4)
-            with f1: img_ref = st.file_uploader("Foto Referencia", type=['jpg','png'])
-            with f2: img_col = st.file_uploader("Foto Color", type=['jpg','png'])
-            with f3: img_bor = st.file_uploader("Foto Bordado", type=['jpg','png'])
-            with f4: pdf_tec = st.file_uploader("Ficha PDF", type=['pdf'])
-
-            # BOTÓN DE GUARDADO
-            if st.form_submit_button("🚀 GUARDAR Y EMPEZAR PATRONAJE"):
-                # (Aquí va la lógica de subida a Storage y INSERT en DB similar a la anterior)
-                st.success("Ficha técnica creada y tiempos de patronista en marcha.")
-
-    with tab2:
-        st.write("Aquí verás el historial con las miniaturas de lo que subas.")
-
-elif modulo == "👥 Proveedores":
-    st.title("👥 Gestión de Proveedores")
-    # Formulario simple para añadir nuevos proveedores a tu lista
-    with st.form("nuevo_prov"):
-        n = st.text_input("Nombre de Empresa")
-        t = st.selectbox("Tipo", ["Lavandería", "Telas", "Insumos", "Taller"])
-        if st.form_submit_button("Añadir Proveedor"):
-            supabase.table("proveedores").insert({"nombre": n, "tipo": t}).execute()
-            st.success("Proveedor añadido.")
+# --- VISTA DE LA PATRONISTA ---
+with tab_patronaje:
+    st.subheader("Fichas Pendientes por Iniciar")
+    # Buscamos solo las fichas que están en estado 'Pendiente'
+    pendientes = supabase.table("fichas_muestras").select("*").eq("estado", "Pendiente Patronaje").execute()
+    
+    if pendientes.data:
+        df_pend = pd.DataFrame(pendientes.data)
+        for _, fila in df_pend.iterrows():
+            with st.expander(f"📌 Muestra: {fila['codigo_muestra']} - {fila['estilo']}"):
+                st.write(f"**Diseñada por:** {fila['disenadora_responsable']}")
+                st.write(f"**Notas:** {fila['observaciones_contra']}")
+                
+                if st.button(f"🚀 Iniciar Cronómetro: {fila['codigo_muestra']}"):
+                    # Actualizamos estado y grabamos la hora de inicio real
+                    hora_inicio = datetime.datetime.now().isoformat()
+                    supabase.table("fichas_muestras").update({
+                        "estado": "En Patronaje",
+                        "fecha_inicio_patronaje": hora_inicio
+                    }).eq("codigo_muestra", fila['codigo_muestra']).execute()
+                    st.rerun() # Refresca para que pase al siguiente estado
+    else:
+        st.info("No hay fichas pendientes por ahora. ¡Día despejado!")
