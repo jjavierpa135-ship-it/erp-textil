@@ -50,22 +50,21 @@ st.sidebar.title("🏢 ERP Pilar Jeans")
 modulo = st.sidebar.radio("Menú", ["👗 Diseño", "📦 Almacén"])
 
 if modulo == "👗 Diseño":
-    # --- SECCIÓN DE BÚSQUEDA CON ESTADO ---
+    # --- SECCIÓN DE BÚSQUEDA CON FECHA ---
     with st.expander("🔍 Buscador de Muestras", expanded=False):
         try:
-            # Traemos código, estilo y estado para mostrar en el desplegable
-            res_busqueda = supabase.table("fichas_muestras").select("codigo_muestra, estilo, estado").order("fecha_creacion", desc=True).limit(50).execute()
+            res_busqueda = supabase.table("fichas_muestras").select("codigo_muestra, estilo, estado, fecha_creacion").order("fecha_creacion", desc=True).limit(50).execute()
             
-            # Formateamos la opción: CODIGO | ESTILO | [ESTADO]
+            # Formateamos: FECHA | CODIGO | ESTILO | [ESTADO]
             opciones_busqueda = ["Seleccionar..."] + [
-                f"{r['codigo_muestra']} | {r['estilo']} | [{r['estado'].upper()}]" 
+                f"{str(r['fecha_creacion'])[:10]} | {r['codigo_muestra']} | {r['estilo']} | [{r['estado'].upper()}]" 
                 for r in res_busqueda.data
             ]
             
-            seleccion = st.selectbox("Escribe para filtrar por código, modelo o estado:", opciones_busqueda)
+            seleccion = st.selectbox("Escribe para filtrar:", opciones_busqueda)
             
             if seleccion != "Seleccionar...":
-                nuevo_cod = seleccion.split(" | ")[0]
+                nuevo_cod = seleccion.split(" | ")[1] # El código ahora es el segundo elemento
                 if st.button("Abrir Ficha Seleccionada"):
                     st.session_state.codigo_actual = nuevo_cod
                     st.session_state.bloquear = True
@@ -104,29 +103,36 @@ if modulo == "👗 Diseño":
         prioridades = ["Normal", "Urgente", "Muestra VIP"]
 
         with st.container():
-            c1, c2, c3 = st.columns(3)
+            # FILA 1: Fechas y Diseñadora
+            c1, c2, c3, c4 = st.columns(4)
             with c1:
                 idx_d = obtener_indice(dis_lista, datos_db.get('disenadora')) if not es_nuevo else 0
                 val_dis = st.selectbox("Diseñadora", dis_lista, index=idx_d, key=f"d_{st.session_state.form_id}", 
                                        disabled=st.session_state.bloquear or ya_enviado)
             with c2:
                 fecha_f = datos_db.get('fecha_creacion', datetime.date.today().strftime('%Y-%m-%d'))
-                st.text_input("Fecha de Creación", value=str(fecha_f)[:10], disabled=True)
+                st.text_input("Fecha Creación", value=str(fecha_f)[:10], disabled=True)
             with c3:
+                # MOSTRAR FECHA Y HORA DE ENVÍO
+                f_envio = datos_db.get('fecha_envio_patronaje')
+                f_envio_str = f_envio.replace("T", " ")[:16] if f_envio else "No enviado"
+                st.text_input("Fecha/Hora Envío", value=f_envio_str, disabled=True)
+            with c4:
                 idx_pr = obtener_indice(prioridades, datos_db.get('prioridad')) if not es_nuevo else 0
                 val_prior = st.selectbox("Prioridad", prioridades, index=idx_pr, key=f"pr_{st.session_state.form_id}", 
                                          disabled=st.session_state.bloquear or ya_enviado)
 
-            c4, c5, c6 = st.columns(3)
-            with c4:
+            # FILA 2: Especificaciones
+            c5, c6, c7 = st.columns(3)
+            with c5:
                 idx_c = obtener_indice(cats, datos_db.get('categoria')) if not es_nuevo else 0
                 val_cat = st.selectbox("Categoría", cats, index=idx_c, key=f"c_{st.session_state.form_id}", 
                                        disabled=st.session_state.bloquear or ya_enviado)
-            with c5:
+            with c6:
                 idx_e = obtener_indice(ests, datos_db.get('estilo')) if not es_nuevo else 0
                 val_est = st.selectbox("Estilo", ests, index=idx_e, key=f"e_{st.session_state.form_id}", 
                                        disabled=st.session_state.bloquear or ya_enviado)
-            with c6:
+            with c7:
                 idx_p = obtener_indice(pats, datos_db.get('patronista_responsable')) if not es_nuevo else 0
                 val_pat = st.selectbox("Patronista", pats, index=idx_p, key=f"p_{st.session_state.form_id}", 
                                        disabled=st.session_state.bloquear or ya_enviado)
@@ -136,6 +142,7 @@ if modulo == "👗 Diseño":
 
             st.divider()
             
+            # BOTONES
             b1, b2, b3 = st.columns(3)
             with b1: # GUARDAR
                 if st.button("💾 Guardar", use_container_width=True, disabled=ya_enviado):
@@ -170,7 +177,12 @@ if modulo == "👗 Diseño":
                     cs, cn = st.columns(2)
                     with cs:
                         if st.button("✅ Sí", use_container_width=True):
-                            supabase.table("fichas_muestras").update({"estado": "Pendiente Patronaje"}).eq("codigo_muestra", st.session_state.codigo_actual).execute()
+                            # Actualizamos el estado Y la fecha de envío
+                            ahora = datetime.datetime.now().isoformat()
+                            supabase.table("fichas_muestras").update({
+                                "estado": "Pendiente Patronaje",
+                                "fecha_envio_patronaje": ahora
+                            }).eq("codigo_muestra", st.session_state.codigo_actual).execute()
                             st.session_state.confirmar_envio = False
                             st.rerun()
                     with cn:
@@ -186,4 +198,4 @@ if modulo == "👗 Diseño":
 
     with tab2:
         st.subheader("Bandeja de Patronaje")
-        st.info("Revisando muestras en proceso...")
+        st.info("Muestras en proceso...")
