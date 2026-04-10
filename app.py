@@ -3,7 +3,7 @@ import pandas as pd
 from supabase import create_client, Client
 import datetime
 
-# --- 1. CONFIGURACIÓN E INTERFAZ ---
+# --- 1. CONFIGURACIÓN E INTERFAZ INICIAL ---
 st.set_page_config(page_title="ERP Pilar Jeans", page_icon="👗", layout="wide")
 
 # --- 2. CONEXIÓN A BASE DE DATOS ---
@@ -13,12 +13,11 @@ except:
     st.error("Error de conexión"); st.stop()
 
 # --- 3. MEMORIA DE ESTADO (Session State) ---
+# Controla si los campos están bloqueados y qué código estamos viendo
 if 'bloquear' not in st.session_state:
-    st.session_state.bloquear = True # Inicia bloqueado por defecto
+    st.session_state.bloquear = False
 if 'codigo_actual' not in st.session_state:
-    st.session_state.codigo_actual = "Cargando..."
-if 'cambios_sin_guardar' not in st.session_state:
-    st.session_state.cambios_sin_guardar = False
+    st.session_state.codigo_actual = "S/C"
 
 # --- 4. FUNCIONES DE APOYO ---
 def generar_codigo(cat, est):
@@ -26,96 +25,85 @@ def generar_codigo(cat, est):
     return f"{prefijo}-{datetime.datetime.now().strftime('%y%m%d%H%M')}"
 
 def nueva_ficha():
-    # Limpia todo para un registro nuevo
+    # Limpia la memoria para empezar desde cero
     st.session_state.bloquear = False
     st.session_state.codigo_actual = "S/C"
-    st.session_state.cambios_sin_guardar = False
     st.rerun()
 
-def cargar_ultima_muestra():
-    # Busca el último registro insertado en Supabase
-    res = supabase.table("fichas_muestras").select("*").order("fecha_creacion", desc=True).limit(1).execute()
-    if res.data:
-        ficha = res.data[0]
-        st.session_state.codigo_actual = ficha['codigo_muestra']
-        return ficha
-    return None
-
-# --- 5. LÓGICA DE INICIO (Solo corre la primera vez) ---
-if st.session_state.codigo_actual == "Cargando...":
-    ultima = cargar_ultima_muestra()
-    if not ultima: st.session_state.codigo_actual = "S/C"
-
-# --- 6. INTERFAZ SUPERIOR ---
+# --- 5. BARRA LATERAL (Menú que mencionaste) ---
 st.sidebar.title("🏢 ERP Pilar Jeans")
-modulo = st.sidebar.radio("Menú Principal", ["👗 Diseño y Patronaje", "👥 Proveedores"])
+modulo = st.sidebar.radio("Menú Principal", ["👗 Diseño y Patronaje", "📦 Almacén", "👥 Proveedores"])
 
+# --- 6. LÓGICA DEL MÓDULO DE DISEÑO ---
 if modulo == "👗 Diseño y Patronaje":
+    
+    # Cabecera superior con Código y botón Nueva Ficha
     col_t, col_c, col_b = st.columns([2, 1, 1])
     with col_t: st.title("Gestión de Muestras")
     with col_c: st.metric("Código en Pantalla", st.session_state.codigo_actual)
     with col_b: 
         if st.button("➕ Nueva Ficha (Limpiar)"): nueva_ficha()
 
+    # Pestañas para Diseñadora y Patronista
     tab_diseno, tab_patronaje = st.tabs(["🎨 Área de Diseño", "📐 Área de Patronaje"])
 
     with tab_diseno:
-        # Recuperamos datos para mostrar (si existen)
-        res_ficha = supabase.table("fichas_muestras").select("*").eq("codigo_muestra", st.session_state.codigo_actual).execute()
-        datos_f = res_ficha.data[0] if res_ficha.data else {}
+        # --- BUSCADOR PARA MODIFICAR ---
+        with st.expander("🔍 Buscar Ficha Existente para Modificar"):
+            cod_busqueda = st.text_input("Ingrese código exacto (Ej: PAN-SKI-...)")
+            if st.button("Buscar y Cargar"):
+                res = supabase.table("fichas_muestras").select("*").eq("codigo_muestra", cod_busqueda).execute()
+                if res.data:
+                    ficha = res.data[0]
+                    st.session_state.codigo_actual = ficha['codigo_muestra']
+                    st.session_state.bloquear = False # Desbloqueamos para editar
+                    st.success(f"Ficha {cod_busqueda} cargada. Puedes modificarla abajo.")
+                else:
+                    st.error("No se encontró esa ficha.")
 
-        # --- FORMULARIO ---
+        st.markdown("---")
+
+        # --- FORMULARIO DE EDICIÓN / REGISTRO ---
         with st.container():
             c1, c2 = st.columns(2)
             with c1:
-                # Si cambias cualquier campo, activamos 'cambios_sin_guardar'
-                cat = st.selectbox("Categoría", ["Pantalón", "Falda", "Blusa"], 
-                                   index=["Pantalón", "Falda", "Blusa"].index(datos_f.get('categoria', "Pantalón")),
-                                   disabled=st.session_state.bloquear, on_change=lambda: st.session_state.update({"cambios_sin_guardar": True}))
-                
-                estilo = st.selectbox("Estilo", ["Skinny", "Mom Fit", "Slim"], 
-                                      index=["Skinny", "Mom Fit", "Slim"].index(datos_f.get('estilo', "Skinny")),
-                                      disabled=st.session_state.bloquear, on_change=lambda: st.session_state.update({"cambios_sin_guardar": True}))
+                categoria = st.selectbox("Categoría", ["Pantalón", "Falda", "Blusa", "Casaca"], disabled=st.session_state.bloquear)
+                estilo = st.selectbox("Estilo", ["Skinny", "Mom Fit", "Slim", "Oversize"], disabled=st.session_state.bloquear)
+                disenadora = st.selectbox("Diseñadora", ["Ariana", "Otras"], disabled=st.session_state.bloquear)
             
             with c2:
-                patronista = st.selectbox("Asignar a", ["Patronista 1", "Patronista 2"], 
-                                          index=["Patronista 1", "Patronista 2"].index(datos_f.get('patronista_responsable', "Patronista 1")),
-                                          disabled=st.session_state.bloquear, on_change=lambda: st.session_state.update({"cambios_sin_guardar": True}))
-                
-                obs = st.text_area("Notas Técnicas", value=datos_f.get('observaciones_contra', ""), 
-                                   disabled=st.session_state.bloquear, on_change=lambda: st.session_state.update({"cambios_sin_guardar": True}))
+                cliente = st.selectbox("Cliente / Marca", ["Pilar Jeans", "Externo"], disabled=st.session_state.bloquear)
+                patronista = st.selectbox("Asignar a", ["Patronista 1", "Patronista 2"], disabled=st.session_state.bloquear)
+                obs = st.text_area("Notas Técnicas", disabled=st.session_state.bloquear)
 
-            st.markdown("---")
-            
-            # --- BOTONES DE ACCIÓN ---
+            # Botones de Acción
             b1, b2, b3 = st.columns(3)
-            
             with b1:
-                if st.button("💾 Guardar Cambios", use_container_width=True):
+                if st.button("💾 Solo Guardar (Borrador)", disabled=st.session_state.bloquear, use_container_width=True):
+                    # Si es ficha nueva, genera código. Si es búsqueda, mantiene el código.
                     if st.session_state.codigo_actual == "S/C":
-                        st.session_state.codigo_actual = generar_codigo(cat, estilo)
+                        st.session_state.codigo_actual = generar_codigo(categoria, estilo)
                     
-                    datos_up = {
+                    datos = {
                         "codigo_muestra": st.session_state.codigo_actual,
-                        "categoria": cat, "estilo": estilo,
+                        "categoria": categoria, "estilo": estilo,
+                        "disenadora_responsable": disenadora,
                         "patronista_responsable": patronista,
-                        "observaciones_contra": obs,
-                        "estado": "Borrador"
+                        "estado": "Borrador", "observaciones_contra": obs
                     }
-                    supabase.table("fichas_muestras").upsert(datos_up, on_conflict="codigo_muestra").execute()
+                    # upsert: inserta si no existe, actualiza si ya existe el código
+                    supabase.table("fichas_muestras").upsert(datos, on_conflict="codigo_muestra").execute()
                     st.session_state.bloquear = True
-                    st.session_state.cambios_sin_guardar = False # Ya está guardado
-                    st.success("Información asegurada.")
+                    st.success("Guardado correctamente.")
                     st.rerun()
 
             with b2:
-                # El botón de enviar se desactiva si hay cambios sin guardar
-                bloquear_envio = st.session_state.cambios_sin_guardar or st.session_state.codigo_actual == "S/C"
-                if st.button("🚀 Enviar a Patronaje", use_container_width=True, disabled=bloquear_envio):
-                    supabase.table("fichas_muestras").update({"estado": "Pendiente Patronaje"}).eq("codigo_muestra", st.session_state.codigo_actual).execute()
-                    st.success("Enviado a patronaje.")
-                if st.session_state.cambios_sin_guardar:
-                    st.caption("⚠️ Debes guardar los cambios antes de enviar.")
+                if st.button("🚀 Enviar a Patronaje", use_container_width=True):
+                    if st.session_state.codigo_actual == "S/C":
+                        st.error("Primero guarda para generar un código.")
+                    else:
+                        supabase.table("fichas_muestras").update({"estado": "Pendiente Patronaje"}).eq("codigo_muestra", st.session_state.codigo_actual).execute()
+                        st.success("Enviado. Ahora la patronista puede verlo.")
 
             with b3:
                 if st.button("✏️ Habilitar Edición", use_container_width=True):
@@ -123,5 +111,20 @@ if modulo == "👗 Diseño y Patronaje":
                     st.rerun()
 
     with tab_patronaje:
-        st.subheader("Tareas para Patronistas")
-        # (Lógica de patronista...)
+        # --- VISTA PARA LA PATRONISTA ---
+        st.subheader("Bandeja de Entrada (Tareas Asignadas)")
+        # Solo mostramos lo que NO es borrador y está pendiente
+        pendientes = supabase.table("fichas_muestras").select("*").eq("estado", "Pendiente Patronaje").execute()
+        
+        if pendientes.data:
+            for p in pendientes.data:
+                with st.expander(f"📋 {p['codigo_muestra']} - {p['estilo']}"):
+                    st.write(f"Asignado a: {p['patronista_responsable']}")
+                    if st.button(f"Iniciar Cronómetro {p['codigo_muestra']}"):
+                        st.info("Cronómetro iniciado. (Lógica de tiempo en el Punto 3)")
+        else:
+            st.write("No hay trabajos pendientes de envío.")
+
+else:
+    st.title(modulo)
+    st.write("Próximamente...")
