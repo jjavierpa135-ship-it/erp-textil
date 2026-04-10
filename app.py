@@ -21,12 +21,13 @@ if 'form_id' not in st.session_state:
 if 'confirmar_envio' not in st.session_state:
     st.session_state.confirmar_envio = False
 
-# --- 4. FUNCIÓN DE LIMPIEZA ---
+# --- 4. FUNCIÓN DE LIMPIEZA TOTAL ---
 def limpiar_pantalla_total():
     st.session_state.codigo_actual = "S/C"
     st.session_state.bloquear = False
     st.session_state.confirmar_envio = False
     st.session_state.form_id += 1 
+    # Limpiamos todas las llaves de los widgets
     for key in list(st.session_state.keys()):
         if key.startswith(('c_', 'e_', 'p_', 'o_', 'd_', 'pr_')):
             del st.session_state[key]
@@ -72,14 +73,13 @@ if modulo == "👗 Diseño":
         prioridades = ["Normal", "Urgente", "Muestra VIP"]
 
         with st.container():
-            # FILA 1: Datos de Identificación
+            # FILA 1: Datos de Identificación y Trazabilidad
             c1, c2, c3 = st.columns(3)
             with c1:
                 idx_d = dis_lista.index(datos_db['disenadora']) if ('disenadora' in datos_db and not es_nuevo) else 0
                 val_dis = st.selectbox("Diseñadora", dis_lista, index=idx_d, key=f"d_{st.session_state.form_id}", 
                                        disabled=st.session_state.bloquear or ya_enviado)
             with c2:
-                # La fecha se muestra pero no se edita si ya existe
                 fecha_f = datos_db.get('fecha_creacion', datetime.date.today().strftime('%Y-%m-%d'))
                 st.text_input("Fecha de Creación", value=fecha_f, disabled=True)
             with c3:
@@ -87,7 +87,7 @@ if modulo == "👗 Diseño":
                 val_prior = st.selectbox("Prioridad", prioridades, index=idx_pr, key=f"pr_{st.session_state.form_id}", 
                                          disabled=st.session_state.bloquear or ya_enviado)
 
-            # FILA 2: Especificaciones
+            # FILA 2: Especificaciones Técnicas
             c4, c5, c6 = st.columns(3)
             with c4:
                 idx_c = cats.index(datos_db['categoria']) if ('categoria' in datos_db and not es_nuevo) else 0
@@ -109,7 +109,8 @@ if modulo == "👗 Diseño":
             
             # --- LÓGICA DE BOTONES ---
             b1, b2, b3 = st.columns(3)
-            with b1:
+            
+            with b1: # BOTÓN GUARDAR
                 if st.button("💾 Guardar", use_container_width=True, disabled=ya_enviado):
                     if "Seleccionar..." in [val_cat, val_est, val_dis]:
                         st.error("Por favor complete todos los campos obligatorios.")
@@ -125,14 +126,19 @@ if modulo == "👗 Diseño":
                             "disenadora": val_dis, "prioridad": val_prior,
                             "patronista_responsable": val_pat, "observaciones_contra": val_obs, "estado": "Borrador"
                         }
-                        supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
-                        st.session_state.codigo_actual = cod
-                        st.session_state.bloquear = True
-                        st.success(f"Ficha Guardada: {cod}")
-                        st.rerun()
+                        
+                        try:
+                            supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
+                            st.session_state.codigo_actual = cod
+                            st.session_state.bloquear = True
+                            st.success(f"Ficha Guardada: {cod}")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error al guardar: {e}")
 
-            with b2:
+            with b2: # BOTÓN ENVIAR (Con Confirmación)
                 puede_enviar = not es_nuevo and st.session_state.bloquear and not ya_enviado
+                
                 if not st.session_state.confirmar_envio:
                     if st.button("🚀 Enviar", use_container_width=True, disabled=not puede_enviar):
                         st.session_state.confirmar_envio = True
@@ -141,61 +147,26 @@ if modulo == "👗 Diseño":
                     st.warning("¿Confirmar envío a patronaje?")
                     c_si, c_no = st.columns(2)
                     with c_si:
-                        if st.button("✅ Sí", use_container_width=True):
+                        if st.button("✅ Sí, enviar", use_container_width=True):
                             supabase.table("fichas_muestras").update({"estado": "Pendiente Patronaje"}).eq("codigo_muestra", st.session_state.codigo_actual).execute()
                             st.session_state.confirmar_envio = False
-                            st.success("Enviado.")
+                            st.success("Enviado con éxito.")
                             st.rerun()
                     with c_no:
-                        if st.button("❌ No", use_container_width=True):
+                        if st.button("❌ Cancelar", use_container_width=True):
                             st.session_state.confirmar_envio = False
                             st.rerun()
                 
-                if ya_enviado: st.info("✅ En Patronaje")
+                if ya_enviado: st.info("✅ Ficha en Patronaje")
+                elif not st.session_state.bloquear: st.caption("⚠️ Guarda cambios para enviar")
 
-            with b3:
+            with b3: # BOTÓN EDITAR
                 if st.button("✏️ Editar", use_container_width=True, disabled=ya_enviado):
                     st.session_state.bloquear = False
                     st.session_state.confirmar_envio = False
                     st.rerun()
 
     with tab2:
-        st.write("Bandeja de Patronaje...")
-# ... (Todo el código anterior igual hasta la sección de GUARDAR)
-
-            with b1:
-                if st.button("💾 Guardar", use_container_width=True, disabled=ya_enviado):
-                    if "Seleccionar..." in [val_cat, val_est, val_dis]:
-                        st.error("Por favor complete todos los campos obligatorios.")
-                    else:
-                        cod = st.session_state.codigo_actual
-                        if cod == "S/C":
-                            def generar_codigo(c, e):
-                                return f"{c[:3].upper()}-{e[:3].upper()}-{datetime.datetime.now().strftime('%y%m%d%H%M')}"
-                            cod = generar_codigo(val_cat, val_est)
-                        
-                        # Payload con los campos adicionales
-                        payload = {
-                            "codigo_muestra": cod, 
-                            "categoria": val_cat, 
-                            "estilo": val_est,
-                            "disenadora": val_dis,     # Asegúrate que en Supabase se llame igual
-                            "prioridad": val_prior,    # Asegúrate que en Supabase se llame igual
-                            "patronista_responsable": val_pat, 
-                            "observaciones_contra": val_obs, 
-                            "estado": "Borrador"
-                        }
-                        
-                        try:
-                            # Intento de guardado
-                            supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
-                            st.session_state.codigo_actual = cod
-                            st.session_state.bloquear = True
-                            st.success(f"Ficha Guardada: {cod}")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error de base de datos: {e}")
-                            st.info("💡 Verifica que las columnas 'disenadora' y 'prioridad' existan en Supabase.")
-
-# ... (Resto del código igual)
+        st.subheader("Bandeja de Patronaje")
+        st.info("Fichas en proceso de revisión...")
                 
