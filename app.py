@@ -11,15 +11,81 @@ try:
 except Exception as e:
     st.error(f"Error de conexión: {e}"); st.stop()
 
-# --- 3. ESTADOS DE SESIÓN ---
-if 'codigo_actual' not in st.session_state:
-    st.session_state.codigo_actual = "Cargando..."
-if 'bloquear' not in st.session_state:
-    st.session_state.bloquear = True
-if 'form_id' not in st.session_state:
-    st.session_state.form_id = 0
-if 'confirmar_envio' not in st.session_state:
-    st.session_state.confirmar_envio = False
+# BLOQUE 3: TELAS E INSUMOS (MEJORADO)
+        with st.container(border=True):
+            st.subheader("3. Telas e Insumos")
+            
+            # --- SECCIÓN TELAS ---
+            # Definimos lista de telas (Puedes alimentarla de otra tabla de Supabase después)
+            lista_telas_db = ["Seleccionar...", "Denim 12oz", "Denim 10oz", "Gabardina", "Tocuyo", "Jersey"]
+            
+            ct1, ct2 = st.columns(2)
+            with ct1:
+                val_t1 = st.selectbox("Tela Principal", lista_telas_db, 
+                                     index=obtener_indice(lista_telas_db, datos_db.get('tela_1')), 
+                                     disabled=st.session_state.bloquear or ya_enviado)
+            with ct2:
+                val_t2 = st.selectbox("Tela Complementaria", lista_telas_db, 
+                                     index=obtener_indice(lista_telas_db, datos_db.get('tela_2')), 
+                                     disabled=st.session_state.bloquear or ya_enviado)
+
+            st.divider()
+
+            # --- SECCIÓN INSUMOS DINÁMICOS ---
+            st.markdown("**Detalle de Insumos**")
+            
+            # Inicializamos la lista de insumos en el estado de sesión si no existe
+            if 'insumos_temp' not in st.session_state or st.session_state.codigo_actual != datos_db.get('codigo_muestra'):
+                db_insumos = datos_db.get('insumos_detalle', [])
+                st.session_state.insumos_temp = db_insumos if isinstance(db_insumos, list) else []
+
+            # Cabecera de la tabla de insumos
+            h1, h2, h3, h4, h5, h6 = st.columns([1.5, 1.5, 1.5, 1, 1, 0.5])
+            h1.caption("Código/Nombre")
+            h2.caption("Color")
+            h3.caption("Diseño/Tipo")
+            h4.caption("Tamaño")
+            h5.caption("Cantidad")
+            h6.caption("Acción")
+
+            # Mostrar líneas existentes
+            for idx, item in enumerate(st.session_state.insumos_temp):
+                r1, r2, r3, r4, r5, r6 = st.columns([1.5, 1.5, 1.5, 1, 1, 0.5])
+                r1.write(item.get('codigo', ''))
+                r2.write(item.get('color', ''))
+                r3.write(item.get('diseno', ''))
+                r4.write(item.get('tamano', ''))
+                r5.write(str(item.get('cantidad', '')))
+                if not (st.session_state.bloquear or ya_enviado):
+                    if r6.button("🗑️", key=f"del_{idx}"):
+                        st.session_state.insumos_temp.pop(idx)
+                        st.rerun()
+
+            # Formulario para añadir nueva línea
+            if not (st.session_state.bloquear or ya_enviado):
+                with st.expander("➕ Añadir Insumo (Botones, Hilos, Cierres, etc.)", expanded=True):
+                    f1, f2, f3 = st.columns(3)
+                    f4, f5, f6 = st.columns(3)
+                    
+                    new_cod = f1.text_input("Nombre/Código Insumo", key="new_cod")
+                    new_col = f2.text_input("Color", key="new_col")
+                    new_dis = f3.text_input("Diseño", key="new_dis")
+                    new_tam = f4.text_input("Tamaño", key="new_tam")
+                    new_can = f5.number_input("Cantidad", min_value=0.0, step=1.0, key="new_can")
+                    
+                    if f6.button("Añadir a la lista", use_container_width=True):
+                        if new_cod:
+                            nuevo_item = {
+                                "codigo": new_cod,
+                                "color": new_col,
+                                "diseno": new_dis,
+                                "tamano": new_tam,
+                                "cantidad": new_can
+                            }
+                            st.session_state.insumos_temp.append(nuevo_item)
+                            st.rerun()
+                        else:
+                            st.warning("El nombre/código es obligatorio")
 
 # --- 4. FUNCIONES DE APOYO ---
 def limpiar_pantalla_total():
