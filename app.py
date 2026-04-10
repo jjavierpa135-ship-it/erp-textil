@@ -199,13 +199,15 @@ if modulo == "👗 Diseño":
                     if cod == "S/C":
                         cod = f"{val_cat[:3].upper()}-{val_est[:3].upper()}-{datetime.datetime.now().strftime('%y%m%d%H%M')}"
                     payload = {
-                        "codigo_muestra": cod, "categoria": val_cat, "estilo": val_est, "disenadora": val_dis,
-                        "prioridad": val_prior, "patronista_responsable": val_pat, "observaciones_contra": val_obs_dis,
-                        "desc_prenda": val_desc, "ref_entalle": val_entalle, "procesos_aux": val_proc,
-                        "rec_observaciones": val_rec, "obs_molde": val_obs_molde, "tela_1": val_t1, "tela_2": val_t2,
-                        "insumos": val_ins, "color_lavado": val_lav, "detalles_arte": val_art,
-                        "curva_tallas": curva_datos, "cantidad_paquetes": val_paq, "estado": "Borrador"
-                    }
+                                "codigo_muestra": cod,
+                                "categoria": val_cat,
+                                # ... otros campos ...
+                                "tela_1": val_t1,
+                                "tela_2": val_t2,
+                                "insumos_detalle": st.session_state.insumos_temp, # <--- ESTA ES LA CLAVE
+                                "curva_tallas": curva_datos,
+                                # ... resto de campos ...
+                            }
                     try:
                         supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
                         st.session_state.codigo_actual = cod
