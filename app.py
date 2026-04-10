@@ -28,7 +28,7 @@ def limpiar_pantalla_total():
     st.session_state.confirmar_envio = False
     st.session_state.form_id += 1 
     for key in list(st.session_state.keys()):
-        if key.startswith(('c_', 'e_', 'p_', 'o_')):
+        if key.startswith(('c_', 'e_', 'p_', 'o_', 'd_', 'pr_')):
             del st.session_state[key]
 
 # --- 5. CARGA INICIAL ---
@@ -64,37 +64,55 @@ if modulo == "👗 Diseño":
                 if datos_db.get('estado') == "Pendiente Patronaje":
                     ya_enviado = True
 
+        # Listas de opciones
         cats = ["Seleccionar...", "Pantalón", "Falda", "Blusa", "Casaca", "Polo"]
         ests = ["Seleccionar...", "Skinny", "Mom Fit", "Oversize", "Straight", "Slim"]
         pats = ["Seleccionar...", "Patronista 1", "Patronista 2", "Patronista 3"]
+        dis_lista = ["Seleccionar...", "Diseñadora 1", "Diseñadora 2", "Diseñadora 3"]
+        prioridades = ["Normal", "Urgente", "Muestra VIP"]
 
         with st.container():
-            c1, c2 = st.columns(2)
+            # FILA 1: Datos de Identificación
+            c1, c2, c3 = st.columns(3)
             with c1:
+                idx_d = dis_lista.index(datos_db['disenadora']) if ('disenadora' in datos_db and not es_nuevo) else 0
+                val_dis = st.selectbox("Diseñadora", dis_lista, index=idx_d, key=f"d_{st.session_state.form_id}", 
+                                       disabled=st.session_state.bloquear or ya_enviado)
+            with c2:
+                # La fecha se muestra pero no se edita si ya existe
+                fecha_f = datos_db.get('fecha_creacion', datetime.date.today().strftime('%Y-%m-%d'))
+                st.text_input("Fecha de Creación", value=fecha_f, disabled=True)
+            with c3:
+                idx_pr = prioridades.index(datos_db['prioridad']) if ('prioridad' in datos_db and not es_nuevo) else 0
+                val_prior = st.selectbox("Prioridad", prioridades, index=idx_pr, key=f"pr_{st.session_state.form_id}", 
+                                         disabled=st.session_state.bloquear or ya_enviado)
+
+            # FILA 2: Especificaciones
+            c4, c5, c6 = st.columns(3)
+            with c4:
                 idx_c = cats.index(datos_db['categoria']) if ('categoria' in datos_db and not es_nuevo) else 0
                 val_cat = st.selectbox("Categoría", cats, index=idx_c, key=f"c_{st.session_state.form_id}", 
                                        disabled=st.session_state.bloquear or ya_enviado)
-                
+            with c5:
                 idx_e = ests.index(datos_db['estilo']) if ('estilo' in datos_db and not es_nuevo) else 0
                 val_est = st.selectbox("Estilo", ests, index=idx_e, key=f"e_{st.session_state.form_id}", 
                                        disabled=st.session_state.bloquear or ya_enviado)
-            
-            with c2:
+            with c6:
                 idx_p = pats.index(datos_db['patronista_responsable']) if ('patronista_responsable' in datos_db and not es_nuevo) else 0
                 val_pat = st.selectbox("Patronista", pats, index=idx_p, key=f"p_{st.session_state.form_id}", 
                                        disabled=st.session_state.bloquear or ya_enviado)
-                
-                txt_previo = datos_db.get('observaciones_contra', "") if not es_nuevo else ""
-                val_obs = st.text_area("Observaciones", value=txt_previo, key=f"o_{st.session_state.form_id}", 
-                                      disabled=st.session_state.bloquear or ya_enviado)
+            
+            val_obs = st.text_area("Observaciones Técnicas", value=datos_db.get('observaciones_contra', ""), 
+                                   key=f"o_{st.session_state.form_id}", disabled=st.session_state.bloquear or ya_enviado)
 
             st.divider()
             
+            # --- LÓGICA DE BOTONES ---
             b1, b2, b3 = st.columns(3)
             with b1:
                 if st.button("💾 Guardar", use_container_width=True, disabled=ya_enviado):
-                    if val_cat == "Seleccionar..." or val_est == "Seleccionar...":
-                        st.error("Seleccione Categoría y Estilo.")
+                    if "Seleccionar..." in [val_cat, val_est, val_dis]:
+                        st.error("Por favor complete todos los campos obligatorios.")
                     else:
                         cod = st.session_state.codigo_actual
                         if cod == "S/C":
@@ -104,48 +122,42 @@ if modulo == "👗 Diseño":
                         
                         payload = {
                             "codigo_muestra": cod, "categoria": val_cat, "estilo": val_est,
+                            "disenadora": val_dis, "prioridad": val_prior,
                             "patronista_responsable": val_pat, "observaciones_contra": val_obs, "estado": "Borrador"
                         }
                         supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
                         st.session_state.codigo_actual = cod
                         st.session_state.bloquear = True
-                        st.success(f"Guardado: {cod}")
+                        st.success(f"Ficha Guardada: {cod}")
                         st.rerun()
 
             with b2:
                 puede_enviar = not es_nuevo and st.session_state.bloquear and not ya_enviado
-                
-                # Si no se ha activado la confirmación, mostrar botón normal
                 if not st.session_state.confirmar_envio:
                     if st.button("🚀 Enviar", use_container_width=True, disabled=not puede_enviar):
                         st.session_state.confirmar_envio = True
                         st.rerun()
                 else:
-                    # Bloque de confirmación
-                    st.warning("¿Está seguro de enviar a patronaje?")
+                    st.warning("¿Confirmar envío a patronaje?")
                     c_si, c_no = st.columns(2)
                     with c_si:
-                        if st.button("✅ Sí, enviar", use_container_width=True):
+                        if st.button("✅ Sí", use_container_width=True):
                             supabase.table("fichas_muestras").update({"estado": "Pendiente Patronaje"}).eq("codigo_muestra", st.session_state.codigo_actual).execute()
                             st.session_state.confirmar_envio = False
-                            st.success("Enviado con éxito.")
+                            st.success("Enviado.")
                             st.rerun()
                     with c_no:
-                        if st.button("❌ Cancelar", use_container_width=True):
+                        if st.button("❌ No", use_container_width=True):
                             st.session_state.confirmar_envio = False
                             st.rerun()
                 
-                if ya_enviado:
-                    st.info("✅ Ficha en Patronaje")
-                elif not st.session_state.bloquear:
-                    st.caption("⚠️ Guarda para enviar")
+                if ya_enviado: st.info("✅ En Patronaje")
 
             with b3:
                 if st.button("✏️ Editar", use_container_width=True, disabled=ya_enviado):
                     st.session_state.bloquear = False
-                    st.session_state.confirmar_envio = False # Reset confirmación al editar
+                    st.session_state.confirmar_envio = False
                     st.rerun()
 
     with tab2:
-        st.subheader("Bandeja de Patronaje")
-        st.info("Fichas en proceso...")
+        st.write("Bandeja de Patronaje...")
