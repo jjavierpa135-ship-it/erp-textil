@@ -19,13 +19,11 @@ if 'bloquear' not in st.session_state:
 if 'form_id' not in st.session_state:
     st.session_state.form_id = 0
 
-# --- 4. FUNCIÓN DE LIMPIEZA ABSOLUTA ---
+# --- 4. FUNCIÓN DE LIMPIEZA ---
 def limpiar_pantalla_total():
-    """Borra toda la memoria de los componentes y resetea el formulario"""
     st.session_state.codigo_actual = "S/C"
     st.session_state.bloquear = False
     st.session_state.form_id += 1 
-    # Borrar físicamente las llaves del estado
     for key in list(st.session_state.keys()):
         if key.startswith(('c_', 'e_', 'p_', 'o_')):
             del st.session_state[key]
@@ -52,14 +50,12 @@ if modulo == "👗 Diseño":
     tab1, tab2 = st.tabs(["🎨 Diseño", "📐 Patronaje"])
 
     with tab1:
-        # Obtenemos datos solo si NO es una ficha nueva
         es_nuevo = st.session_state.codigo_actual == "S/C"
         datos_db = {}
         if not es_nuevo:
             res = supabase.table("fichas_muestras").select("*").eq("codigo_muestra", st.session_state.codigo_actual).execute()
             if res.data: datos_db = res.data[0]
 
-        # Listas con opción inicial vacía para OBLIGAR a elegir
         cats = ["Seleccionar...", "Pantalón", "Falda", "Blusa", "Casaca", "Polo"]
         ests = ["Seleccionar...", "Skinny", "Mom Fit", "Oversize", "Straight", "Slim"]
         pats = ["Seleccionar...", "Patronista 1", "Patronista 2", "Patronista 3"]
@@ -67,7 +63,6 @@ if modulo == "👗 Diseño":
         with st.container():
             c1, c2 = st.columns(2)
             with c1:
-                # Lógica: Si es nuevo, index=0 ("Seleccionar..."). Si no, busca el valor.
                 idx_c = cats.index(datos_db['categoria']) if ('categoria' in datos_db and not es_nuevo) else 0
                 val_cat = st.selectbox("Categoría", cats, index=idx_c, key=f"c_{st.session_state.form_id}", disabled=st.session_state.bloquear)
                 
@@ -78,19 +73,16 @@ if modulo == "👗 Diseño":
                 idx_p = pats.index(datos_db['patronista_responsable']) if ('patronista_responsable' in datos_db and not es_nuevo) else 0
                 val_pat = st.selectbox("Patronista", pats, index=idx_p, key=f"p_{st.session_state.form_id}", disabled=st.session_state.bloquear)
                 
-                # Texto: Si es nuevo, forzamos vacío ""
                 txt_previo = datos_db.get('observaciones_contra', "") if not es_nuevo else ""
                 val_obs = st.text_area("Observaciones", value=txt_previo, key=f"o_{st.session_state.form_id}", disabled=st.session_state.bloquear)
 
             st.divider()
             
-            # --- LÓGICA DE BOTONES ---
             b1, b2, b3 = st.columns(3)
             with b1:
                 if st.button("💾 Guardar", use_container_width=True):
-                    # Validación: No dejar guardar si no han seleccionado opciones reales
                     if val_cat == "Seleccionar..." or val_est == "Seleccionar...":
-                        st.error("Por favor seleccione Categoría y Estilo antes de guardar.")
+                        st.error("Por favor seleccione Categoría y Estilo.")
                     else:
                         cod = st.session_state.codigo_actual
                         if cod == "S/C":
@@ -104,17 +96,27 @@ if modulo == "👗 Diseño":
                         }
                         supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
                         st.session_state.codigo_actual = cod
-                        st.session_state.bloquear = True
+                        st.session_state.bloquear = True # Aquí se bloquea la edición y se libera el botón enviar
                         st.success(f"Guardado: {cod}")
                         st.rerun()
 
             with b2:
-                # Solo se envía si ya está guardado y no es S/C
-                if st.button("🚀 Enviar", use_container_width=True, disabled=es_nuevo):
+                # RESTRICCIÓN: El botón enviar se bloquea si 'bloquear' es False (es decir, si está en modo edición)
+                # También se bloquea si es una ficha nueva (S/C)
+                puede_enviar = st.session_state.bloquear and not es_nuevo
+                
+                if st.button("🚀 Enviar", use_container_width=True, disabled=not puede_enviar):
                     supabase.table("fichas_muestras").update({"estado": "Pendiente Patronaje"}).eq("codigo_muestra", st.session_state.codigo_actual).execute()
                     st.success("Enviado a Patronaje.")
+                
+                if not st.session_state.bloquear:
+                    st.caption("⚠️ Guarda los cambios para enviar.")
 
             with b3:
                 if st.button("✏️ Editar", use_container_width=True):
-                    st.session_state.bloquear = False
+                    st.session_state.bloquear = False # Al habilitar edición, se deshabilita el envío automáticamente
                     st.rerun()
+
+    with tab2:
+        st.subheader("Bandeja de Patronaje")
+        st.write("Pendientes de revisión...")
