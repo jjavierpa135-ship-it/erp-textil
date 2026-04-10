@@ -28,18 +28,19 @@ def generar_codigo(cat, est):
     marca = datetime.datetime.now().strftime('%y%m%d%H%M')
     return f"{prefijo}-{marca}"
 
-def nueva_ficha_callback():
-    """Esta función limpia todo ANTES de que Streamlit dibuje la pantalla"""
+def reset_para_nueva_ficha():
+    """Limpia la memoria del formulario por completo"""
     st.session_state.codigo_actual = "S/C"
     st.session_state.bloquear = False
     st.session_state.cambios_sin_guardar = False
-    st.session_state.form_id += 1 
-    # Limpieza profunda de llaves para evitar el mensaje amarillo
-    keys_to_delete = [k for k in st.session_state.keys() if k.startswith(('c_', 'e_', 'p_', 'o_'))]
-    for k in keys_to_delete:
-        del st.session_state[k]
+    # Cambiamos el form_id para que Streamlit crea que es un formulario nuevo
+    st.session_state.form_id += 1
+    # Borramos manualmente los valores de los widgets del session_state
+    for key in list(st.session_state.keys()):
+        if key.startswith(('c_', 'e_', 'p_', 'o_')):
+            del st.session_state[key]
 
-# --- 5. CARGA INICIAL ---
+# --- 5. CARGA INICIAL (Solo al abrir) ---
 if st.session_state.codigo_actual == "Cargando...":
     try:
         res = supabase.table("fichas_muestras").select("*").order("fecha_creacion", desc=True).limit(1).execute()
@@ -56,53 +57,54 @@ if modulo == "👗 Diseño":
     with col_t: st.title("Ficha Técnica")
     with col_c: st.metric("Código Activo", st.session_state.codigo_actual)
     with col_b: 
-        # El callback evita el error amarillo de modificación durante el renderizado
-        st.button("➕ Nueva Ficha (Limpiar)", on_click=nueva_ficha_callback)
+        # Al hacer clic, ejecuta la limpieza
+        st.button("➕ Nueva Ficha (Limpiar)", on_click=reset_para_nueva_ficha)
 
     tab1, tab2 = st.tabs(["🎨 Diseño", "📐 Patronaje"])
 
     with tab1:
-        # Recuperación de datos
-        datos = {}
+        # Recuperación de datos solo si no es una ficha nueva
+        datos_db = {}
         if st.session_state.codigo_actual != "S/C":
             res = supabase.table("fichas_muestras").select("*").eq("codigo_muestra", st.session_state.codigo_actual).execute()
-            if res.data: datos = res.data[0]
+            if res.data:
+                datos_db = res.data[0]
 
-        # Listas
+        # Listas de opciones
         cats = ["Pantalón", "Falda", "Blusa", "Casaca", "Polo"]
         ests = ["Skinny", "Mom Fit", "Oversize", "Straight", "Slim"]
         pats = ["Patronista 1", "Patronista 2", "Patronista 3"]
 
         # FORMULARIO
+        # Usamos el form_id en la 'key' de cada widget para forzar el vaciado
         with st.container():
             c1, c2 = st.columns(2)
             with c1:
-                # Si el código es S/C, ignoramos cualquier dato previo
-                idx_cat = cats.index(datos['categoria']) if ('categoria' in datos and st.session_state.codigo_actual != "S/C") else 0
+                idx_cat = cats.index(datos_db['categoria']) if 'categoria' in datos_db else 0
                 val_cat = st.selectbox("Categoría", cats, index=idx_cat, 
                                       disabled=st.session_state.bloquear,
                                       key=f"c_{st.session_state.form_id}")
                 
-                idx_est = ests.index(datos['estilo']) if ('estilo' in datos and st.session_state.codigo_actual != "S/C") else 0
+                idx_est = ests.index(datos_db['estilo']) if 'estilo' in datos_db else 0
                 val_est = st.selectbox("Estilo", ests, index=idx_est, 
                                       disabled=st.session_state.bloquear,
                                       key=f"e_{st.session_state.form_id}")
             
             with c2:
-                idx_pat = pats.index(datos['patronista_responsable']) if ('patronista_responsable' in datos and st.session_state.codigo_actual != "S/C") else 0
+                idx_pat = pats.index(datos_db['patronista_responsable']) if 'patronista_responsable' in datos_db else 0
                 val_pat = st.selectbox("Patronista", pats, index=idx_pat, 
                                       disabled=st.session_state.bloquear,
                                       key=f"p_{st.session_state.form_id}")
                 
-                txt_obs = datos.get('observaciones_contra', "") if st.session_state.codigo_actual != "S/C" else ""
-                val_obs = st.text_area("Observaciones", value=txt_obs, 
+                # El valor del texto se limpia si el código es S/C
+                txt_area = datos_db.get('observaciones_contra', "") if st.session_state.codigo_actual != "S/C" else ""
+                val_obs = st.text_area("Observaciones", value=txt_area, 
                                       disabled=st.session_state.bloquear,
                                       key=f"o_{st.session_state.form_id}")
 
-            # Detección de cambios manual para evitar el warning amarillo de on_change
+            # Control de cambios simple
             if not st.session_state.bloquear and st.session_state.codigo_actual != "S/C":
-                # Si los valores actuales son diferentes a los guardados, hay cambios
-                if val_cat != datos.get('categoria') or val_est != datos.get('estilo') or val_obs != datos.get('observaciones_contra'):
+                if val_cat != datos_db.get('categoria') or val_est != datos_db.get('estilo') or val_obs != datos_db.get('observaciones_contra'):
                     st.session_state.cambios_sin_guardar = True
 
             st.divider()
@@ -110,31 +112,28 @@ if modulo == "👗 Diseño":
             b1, b2, b3 = st.columns(3)
             with b1:
                 if st.button("💾 Guardar", use_container_width=True):
-                    cod_final = st.session_state.codigo_actual
-                    if cod_final == "S/C":
-                        cod_final = generar_codigo(val_cat, val_est)
+                    cod = st.session_state.codigo_actual
+                    if cod == "S/C":
+                        cod = generar_codigo(val_cat, val_est)
                     
                     payload = {
-                        "codigo_muestra": cod_final,
+                        "codigo_muestra": cod,
                         "categoria": val_cat, "estilo": val_est,
                         "patronista_responsable": val_pat, "observaciones_contra": val_obs,
                         "estado": "Borrador"
                     }
                     supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
-                    st.session_state.codigo_actual = cod_final
+                    st.session_state.codigo_actual = cod
                     st.session_state.bloquear = True
                     st.session_state.cambios_sin_guardar = False
-                    st.success("¡Guardado correctamente!")
+                    st.success("Guardado.")
                     st.rerun()
 
             with b2:
-                # El botón enviar solo se activa si no hay cambios pendientes
                 can_send = not st.session_state.cambios_sin_guardar and st.session_state.codigo_actual != "S/C"
                 if st.button("🚀 Enviar", use_container_width=True, disabled=not can_send):
                     supabase.table("fichas_muestras").update({"estado": "Pendiente Patronaje"}).eq("codigo_muestra", st.session_state.codigo_actual).execute()
-                    st.success("Enviado a Patronaje.")
-                if st.session_state.cambios_sin_guardar:
-                    st.caption("⚠️ Debes guardar los cambios primero.")
+                    st.success("Enviado.")
 
             with b3:
                 if st.button("✏️ Editar", use_container_width=True):
