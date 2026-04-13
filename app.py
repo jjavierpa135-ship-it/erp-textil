@@ -205,7 +205,7 @@ if modulo == "👗 Diseño":
             with cs2:
                 val_art = st.text_input("Bordado / Estampado", value=datos_db.get('detalles_arte', ""), disabled=st.session_state.bloquear or ya_enviado)
 
-        # --- 5. TALLAS DINÁMICAS (MODIFICADO) ---
+# --- 5. TALLAS DINÁMICAS (CORRECCIÓN DE ERRORES) ---
         with st.container(border=True):
             st.subheader("5. Tallas y Planificación de Corte")
             
@@ -223,6 +223,7 @@ if modulo == "👗 Diseño":
                 nueva_c = col_add2.number_input("Cant. x Paquete", min_value=1, step=1, key="add_talla_cant")
                 if col_add3.button("➕ Añadir"):
                     if nueva_t:
+                        # Aseguramos que guardamos un diccionario limpio
                         st.session_state.curva_dinamica.append({"talla": nueva_t, "cantidad": nueva_c})
                         st.rerun()
 
@@ -232,19 +233,23 @@ if modulo == "👗 Diseño":
 
                 total_general_prendas = 0
                 for idx, t_item in enumerate(st.session_state.curva_dinamica):
+                    # --- VALIDACIÓN ANTICORRUPCIÓN ---
+                    # Si t_item no es un diccionario, lo ignoramos para evitar el error
+                    if not isinstance(t_item, dict):
+                        continue
+                    
                     r_t = st.columns([2, 2, 2, 0.5])
                     
-                    # --- CORRECCIÓN AQUÍ: Validamos que sean números ---
-                    cant_unid = t_item.get('cantidad', 0)
-                    # Si por alguna razón cant_unid o val_paq son None, usamos 0
-                    cant_unid = int(cant_unid) if cant_unid else 0
-                    n_paquetes = int(val_paq) if val_paq else 0
+                    # Obtenemos valores de forma segura
+                    c_und = t_item.get('cantidad', 0)
+                    t_nombre = t_item.get('talla', "S/N")
                     
-                    t_final = cant_unid * n_paquetes
+                    # Cálculo final
+                    t_final = int(c_und) * int(val_paq)
                     total_general_prendas += t_final
                     
-                    r_t[0].write(f"**{t_item['talla']}**")
-                    r_t[1].write(f"{cant_unid} und.")
+                    r_t[0].write(f"**{t_nombre}**")
+                    r_t[1].write(f"{c_und} und.")
                     r_t[2].info(f"{t_final} unidades")
                     
                     if not st.session_state.bloquear and not ya_enviado:
