@@ -174,32 +174,30 @@ if modulo == "👗 Diseño":
             with cs2: val_art = st.text_input("Arte", value=datos_db.get('detalles_arte', ""), disabled=st.session_state.bloquear or ya_enviado)
 
 
-# --- SECCIÓN 5: TALLAS Y PLANIFICACIÓN (FLUJO OPTIMIZADO) ---
+# --- SECCIÓN 5: TALLAS Y PLANIFICACIÓN (FLUJO LÓGICO Y SEGURO) ---
         with st.container(border=True):
             col_t_tit, col_t_res = st.columns([3, 1])
             col_t_tit.subheader("5. Tallas y Planificación de Corte")
             
-            # Botón de reinicio seguro
+            # Inicialización de la lista de tallas
+            if 'curva_dinamica' not in st.session_state or st.session_state.curva_dinamica is None:
+                st.session_state.curva_dinamica = []
+
             if not st.session_state.bloquear and not ya_enviado:
                 if col_t_res.button("♻️ Reiniciar Tallas", use_container_width=True):
                     st.session_state.curva_dinamica = []
                     st.rerun()
 
-            # Inicialización forzada para evitar AttributeError
-            if 'curva_dinamica' not in st.session_state or st.session_state.curva_dinamica is None:
-                st.session_state.curva_dinamica = []
-
-            # --- PASO 1: CONFIGURAR TALLAS (TIZADO) ---
+            # --- PASO 1: AGREGAR TALLAS AL TIZADO ---
             if not st.session_state.bloquear and not ya_enviado:
                 st.markdown("**1. Armar el Tizado (Proporción por capa)**")
                 c1, c2, c3 = st.columns([2, 2, 1])
                 t_ops = ["Seleccionar...", "26", "28", "30", "32", "34", "36", "S", "M", "L", "XL"]
-                t_sel = c1.selectbox("Talla", t_ops, key="sel_t_final_v5")
-                r_val = c2.number_input("Piezas en Tizado", min_value=1, step=1, key="num_r_final_v5")
+                t_sel = c1.selectbox("Talla", t_ops, key="selector_talla_v6")
+                r_val = c2.number_input("Piezas en Tizado", min_value=1, step=1, key="ratio_v6")
                 
                 if c3.button("➕ Añadir"):
                     if t_sel != "Seleccionar...":
-                        # Validación de duplicados integrada
                         actuales = [item['talla'] for item in st.session_state.curva_dinamica if isinstance(item, dict)]
                         if t_sel in actuales:
                             st.warning(f"La talla {t_sel} ya está en la lista.")
@@ -207,34 +205,31 @@ if modulo == "👗 Diseño":
                             st.session_state.curva_dinamica.append({"talla": t_sel, "cantidad": r_val})
                             st.rerun()
 
-            # --- PASO 2: CÁLCULOS (SOLO SI HAY TALLAS) ---
-            if st.session_state.curva_dinamica:
-                # Suma de ratios con manejo de errores de tipo
-                suma_tizado = sum(int(i.get('cantidad', 0)) for i in st.session_state.curva_dinamica if isinstance(i, dict))
-                
+            # --- PASO 2: DEFINIR CANTIDAD (Solo si hay tallas para evitar ZeroDivisionError) ---
+            suma_tizado = sum(int(i.get('cantidad', 0)) for i in st.session_state.curva_dinamica if isinstance(i, dict))
+            
+            if suma_tizado > 0:
                 st.divider()
-                st.markdown(f"**2. Definir Cantidad del Pedido** (Tizado actual: {suma_tizado} piezas por capa)")
+                st.markdown(f"**2. Definir Cantidad del Pedido** (Tizado actual: {suma_tizado} pzs por capa)")
                 
-                # Input de cantidad
-                val_sug = max(suma_tizado, int(datos_db.get('cantidad_paquetes', suma_tizado)))
+                # Sugerir como mínimo el total del tizado actual
+                val_inicial = max(suma_tizado, int(datos_db.get('cantidad_paquetes', suma_tizado)))
                 cant_pedida = st.number_input("¿Cuántas prendas desea en total?", min_value=1, 
-                                              value=val_sug, 
+                                              value=val_inicial, 
                                               disabled=st.session_state.bloquear or ya_enviado)
 
-                # Lógica de capas de taller
+                # Cálculo de capas (n_capas) y total real
                 n_capas = (cant_pedida + suma_tizado - 1) // suma_tizado
                 total_real = n_capas * suma_tizado
                 
-                # Aviso de ajuste si no es múltiplo
                 if total_real != cant_pedida:
                     st.warning(f"⚠️ **Ajuste:** Para respetar el tizado de {suma_tizado} pzs, se cortarán **{n_capas} capas** ({total_real} unidades).")
 
-                # Tabla de resultados final
+                # Tabla de resumen
                 h = st.columns([2, 2, 2, 0.5])
                 h[0].caption("TALLA"); h[1].caption("EN TIZADO"); h[2].caption("TOTAL UNIDADES")
 
                 for idx, item in enumerate(st.session_state.curva_dinamica):
-                    if not isinstance(item, dict): continue
                     fila = st.columns([2, 2, 2, 0.5])
                     v_pzs = int(item.get('cantidad', 0))
                     
@@ -243,52 +238,51 @@ if modulo == "👗 Diseño":
                     fila[2].info(f"{n_capas * v_pzs} und.")
                     
                     if not st.session_state.bloquear and not ya_enviado:
-                        if fila[3].button("🗑️", key=f"btn_del_v5_{idx}"):
+                        if fila[3].button("🗑️", key=f"del_v6_{idx}"):
                             st.session_state.curva_dinamica.pop(idx); st.rerun()
                 
                 st.divider()
                 st.metric("TOTAL REAL A CORTAR", f"{total_real} prendas")
             else:
-                st.info("Primero agregue las tallas y su proporción para configurar el tizado.")
+                st.info("Agregue al menos una talla para definir la cantidad del pedido.")
+                total_real = 0 # Valor por defecto para el payload
 
-        # --- SECCIÓN 6: FOTOS (CORREGIDO) ---
+        # --- SECCIÓN 6: FOTOS ---
         with st.container(border=True):
             st.subheader("6. Fotos")
             st.file_uploader("Subir fotos", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'], 
                              disabled=st.session_state.bloquear or ya_enviado)
 
         st.divider()
-        # --- BOTONES DE ACCIÓN (INDENTACIÓN Y LÓGICA REFORZADA) ---
-        b_c1, b_c2, b_c3 = st.columns(3)
+        # --- BOTONES DE ACCIÓN (BLINDADOS) ---
+        b1, b2, b3 = st.columns(3)
 
-        with b_c1:
+        with b1:
             if st.button("💾 Guardar Todo", use_container_width=True, disabled=ya_enviado):
-                cod_final = st.session_state.codigo_actual if st.session_state.codigo_actual != "S/C" else f"M-{datetime.datetime.now().strftime('%y%m%d%H%M')}"
+                cod_id = st.session_state.codigo_actual if st.session_state.codigo_actual != "S/C" else f"M-{datetime.datetime.now().strftime('%y%m%d%H%M')}"
                 
-                # Definición de payload segura para evitar "NameError"
-                data_save = {
-                    "codigo_muestra": cod_final,
+                payload = {
+                    "codigo_muestra": cod_id,
                     "categoria": val_cat, "estilo": val_est, "disenadora": val_dis, "prioridad": val_prior,
                     "patronista_responsable": val_pat, "observaciones_contra": val_obs_dis, "desc_prenda": val_desc,
                     "tela_1": val_t1, "curva_tallas": st.session_state.curva_dinamica,
-                    "cantidad_paquetes": total_real if 'total_real' in locals() else 0, 
-                    "estado": "Borrador"
+                    "cantidad_paquetes": total_real, "estado": "Borrador"
                 }
                 try:
-                    supabase.table("fichas_muestras").upsert(data_save, on_conflict="codigo_muestra").execute()
-                    st.session_state.codigo_actual = cod_final
+                    supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
+                    st.session_state.codigo_actual = cod_id
                     st.session_state.bloquear = True
-                    st.success("Guardado"); st.rerun()
+                    st.success(f"Guardado como {cod_id}"); st.rerun()
                 except Exception as e:
                     st.error(f"Error al guardar: {e}")
 
-        with b_c2:
+        with b2:
             p_e = st.session_state.bloquear and st.session_state.codigo_actual != "S/C" and not ya_enviado
             if not st.session_state.confirmar_envio:
                 if st.button("🚀 Enviar a Patronaje", use_container_width=True, disabled=not p_e):
                     st.session_state.confirmar_envio = True; st.rerun()
             else:
-                st.warning("¿Confirmar?")
+                st.warning("¿Confirmar envío?")
                 c_si, c_no = st.columns(2)
                 if c_si.button("✅ Sí", use_container_width=True):
                     supabase.table("fichas_muestras").update({"estado": "Pendiente Patronaje", "fecha_envio_patronaje": datetime.datetime.now().isoformat()}).eq("codigo_muestra", st.session_state.codigo_actual).execute()
@@ -296,6 +290,6 @@ if modulo == "👗 Diseño":
                 if c_no.button("❌ No", use_container_width=True):
                     st.session_state.confirmar_envio = False; st.rerun()
 
-        with b_c3:
+        with b3:
             if st.button("✏️ Editar", use_container_width=True, disabled=ya_enviado):
                 st.session_state.bloquear = False; st.rerun()
