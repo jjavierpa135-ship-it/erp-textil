@@ -205,52 +205,62 @@ if modulo == "👗 Diseño":
             with cs2:
                 val_art = st.text_input("Bordado / Estampado", value=datos_db.get('detalles_arte', ""), disabled=st.session_state.bloquear or ya_enviado)
 
-# --- 5. TALLAS DINÁMICAS (CORRECCIÓN DE ERRORES) ---
+# --- 5. TALLAS Y PLANIFICACIÓN DE CORTE (LÓGICA PROPORCIONAL) ---
         with st.container(border=True):
             st.subheader("5. Tallas y Planificación de Corte")
             
-            c_paq1, c_paq2 = st.columns([1, 2])
-            with c_paq1:
-                val_paq = st.number_input("N° de Paquetes", min_value=1, value=int(datos_db.get('cantidad_paquetes', 1)), 
-                                         disabled=st.session_state.bloquear or ya_enviado, key="input_paquetes")
+            # A. Entrada del pedido total
+            val_total_pedido = st.number_input("Cantidad total de prendas a hacer", min_value=1, 
+                                              value=int(datos_db.get('cantidad_paquetes', 10)), 
+                                              disabled=st.session_state.bloquear or ya_enviado, key="input_total_pedido")
 
             st.divider()
 
+            # B. Interfaz para añadir tallas
             if not st.session_state.bloquear and not ya_enviado:
-                st.markdown("**Añadir Talla al Corte**")
+                st.markdown("**Configurar Proporción de Corte**")
                 col_add1, col_add2, col_add3 = st.columns([2, 2, 1])
-                nueva_t = col_add1.text_input("Talla (ej: 30, XL)", key="add_talla_nom")
-                nueva_c = col_add2.number_input("Cant. x Paquete", min_value=1, step=1, key="add_talla_cant")
-                if col_add3.button("➕ Añadir"):
-                    if nueva_t:
-                        # Aseguramos que guardamos un diccionario limpio
+                
+                # Opciones de talla en combo (puedes añadir más a la lista)
+                lista_tallas_combo = ["Seleccionar...", "26", "28", "30", "32", "34", "36", "S", "M", "L", "XL"]
+                nueva_t = col_add1.selectbox("Seleccionar Talla", lista_tallas_combo, key="add_talla_nom")
+                nueva_c = col_add2.number_input("Corte (Proporción)", min_value=1, step=1, key="add_talla_cant")
+                
+                if col_add3.button("➕ Añadir", use_container_width=True):
+                    if nueva_t != "Seleccionar...":
+                        # Añadimos a la sesión
                         st.session_state.curva_dinamica.append({"talla": nueva_t, "cantidad": nueva_c})
+                        # Limpiamos los campos reseteando sus keys en session_state
+                        st.session_state.add_talla_nom = "Seleccionar..."
+                        st.session_state.add_talla_cant = 1
                         st.rerun()
 
+            # C. Visualización y Cálculo Proporcional
             if st.session_state.curva_dinamica:
+                # Calculamos la suma total de "Cortes" para sacar el factor
+                suma_cortes = sum(int(item.get('cantidad', 0)) for item in st.session_state.curva_dinamica if isinstance(item, dict))
+                
                 h_t = st.columns([2, 2, 2, 0.5])
-                h_t[0].caption("TALLA"); h_t[1].caption("CANT. X PAQUETE"); h_t[2].caption("TOTAL A CORTAR")
+                h_t[0].caption("TALLA"); h_t[1].caption("CORTE (RATIO)"); h_t[2].caption("TOTAL A CORTAR")
 
-                total_general_prendas = 0
+                total_verificacion = 0
                 for idx, t_item in enumerate(st.session_state.curva_dinamica):
-                    # --- VALIDACIÓN ANTICORRUPCIÓN ---
-                    # Si t_item no es un diccionario, lo ignoramos para evitar el error
-                    if not isinstance(t_item, dict):
-                        continue
+                    if not isinstance(t_item, dict): continue
                     
                     r_t = st.columns([2, 2, 2, 0.5])
+                    corte_ratio = int(t_item.get('cantidad', 0))
                     
-                    # Obtenemos valores de forma segura
-                    c_und = t_item.get('cantidad', 0)
-                    t_nombre = t_item.get('talla', "S/N")
+                    # FÓRMULA: (Total Pedido / Suma de Ratios) * Ratio de esta talla
+                    if suma_cortes > 0:
+                        t_final = (val_total_pedido / suma_cortes) * corte_ratio
+                    else:
+                        t_final = 0
                     
-                    # Cálculo final
-                    t_final = int(c_und) * int(val_paq)
-                    total_general_prendas += t_final
+                    total_verificacion += t_final
                     
-                    r_t[0].write(f"**{t_nombre}**")
-                    r_t[1].write(f"{c_und} und.")
-                    r_t[2].info(f"{t_final} unidades")
+                    r_t[0].write(f"**{t_item['talla']}**")
+                    r_t[1].write(f"{corte_ratio} partes")
+                    r_t[2].info(f"{int(t_final)} unidades") # Mostramos entero para producción
                     
                     if not st.session_state.bloquear and not ya_enviado:
                         if r_t[3].button("🗑️", key=f"del_talla_{idx}"):
@@ -258,7 +268,10 @@ if modulo == "👗 Diseño":
                             st.rerun()
                 
                 st.divider()
-                st.metric("TOTAL PRENDAS EN ESTA FICHA", f"{total_general_prendas} Unidades")
+                st.write(f"Suma de proporciones: **{suma_cortes}**")
+                st.metric("TOTAL CALCULADO", f"{int(total_verificacion)} / {val_total_pedido} prendas")
+            else:
+                st.info("Define las proporciones de corte para calcular las cantidades por talla.")
 
         # 6. FOTOS
         with st.container(border=True):
