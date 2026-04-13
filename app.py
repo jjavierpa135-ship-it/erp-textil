@@ -24,6 +24,8 @@ if 'insumos_temp' not in st.session_state:
     st.session_state.insumos_temp = []
 if 'curva_dinamica' not in st.session_state:
     st.session_state.curva_dinamica = []
+if 'curva_dinamica' not in st.session_state:
+    st.session_state.curva_dinamica = []
 
 # --- 4. FUNCIONES DE APOYO ---
 def limpiar_pantalla_total():
@@ -171,11 +173,21 @@ if modulo == "👗 Diseño":
             with cs1: val_lav = st.text_input("Lavado", value=datos_db.get('color_lavado', ""), disabled=st.session_state.bloquear or ya_enviado)
             with cs2: val_art = st.text_input("Arte", value=datos_db.get('detalles_arte', ""), disabled=st.session_state.bloquear or ya_enviado)
 
-        # --- 5. TALLAS Y PLANIFICACIÓN DE CORTE (CORREGIDO) ---
+# --- 5. TALLAS Y PLANIFICACIÓN DE CORTE (MEJORADO) ---
         with st.container(border=True):
-            st.subheader("5. Tallas y Planificación de Corte")
+            col_head1, col_head2 = st.columns([3, 1])
+            col_head1.subheader("5. Tallas y Planificación de Corte")
             
-            val_total_prendas = st.number_input("Cantidad total de prendas a hacer", min_value=1, 
+            # Sugerencia de gestión: Botón para reiniciar solo las tallas si hay muchos errores
+            if not st.session_state.bloquear and not ya_enviado:
+                if col_head2.button("♻️ Reiniciar Tallas", help="Borra todas las tallas añadidas"):
+                    st.session_state.curva_dinamica = []
+                    st.rerun()
+            
+            # Seguridad de nulos
+            if st.session_state.curva_dinamica is None: st.session_state.curva_dinamica = []
+
+            val_total_prendas = st.number_input("Cantidad total de prendas a hacer (Pedido)", min_value=1, 
                                               value=int(datos_db.get('cantidad_paquetes', 10)), 
                                               disabled=st.session_state.bloquear or ya_enviado)
 
@@ -184,38 +196,61 @@ if modulo == "👗 Diseño":
             if not st.session_state.bloquear and not ya_enviado:
                 st.markdown("**Configurar Proporción de Corte**")
                 col_add1, col_add2, col_add3 = st.columns([2, 2, 1])
-                lista_tallas = ["Seleccionar...", "26", "28", "30", "32", "34", "36", "S", "M", "L", "XL"]
-                nueva_t = col_add1.selectbox("Talla", lista_tallas, key="tmp_talla_select")
-                nueva_c = col_add2.number_input("Corte (Ratio)", min_value=1, step=1, key="tmp_corte_input")
+                lista_tallas_opciones = ["Seleccionar...", "26", "28", "30", "32", "34", "36", "S", "M", "L", "XL"]
+                nueva_t = col_add1.selectbox("Talla", lista_tallas_opciones, key="tmp_talla_select")
+                nueva_c = col_add2.number_input("Corte (Ratio/Proporción)", min_value=1, step=1, key="tmp_corte_input")
                 
                 if col_add3.button("➕ Añadir"):
-                    if nueva_t != "Seleccionar...":
-                        if st.session_state.curva_dinamica is None: st.session_state.curva_dinamica = []
-                        st.session_state.curva_dinamica.append({"talla": nueva_t, "cantidad": nueva_c})
-                        st.rerun()
+                    if nueva_t == "Seleccionar...":
+                        st.error("Elige una talla.")
+                    else:
+                        # VALIDACIÓN 1: No permitir duplicados
+                        tallas_existentes = [item['talla'] for item in st.session_state.curva_dinamica]
+                        if nueva_t in tallas_existentes:
+                            st.warning(f"La talla {nueva_t} ya está en la lista. Elíminala si deseas cambiar su valor.")
+                        else:
+                            st.session_state.curva_dinamica.append({"talla": nueva_t, "cantidad": nueva_c})
+                            st.rerun()
 
+            # Visualización de la tabla de cálculos
             if st.session_state.curva_dinamica:
-                suma_cortes = sum(int(item.get('cantidad', 0)) for item in st.session_state.curva_dinamica if isinstance(item, dict))
-                h_t = st.columns([2, 2, 2, 0.5])
-                h_t[0].caption("TALLA"); h_t[1].caption("CORTE (RATIO)"); h_t[2].caption("TOTAL A CORTAR")
+                suma_cortes = sum(int(item.get('cantidad', 0)) for item in st.session_state.curva_dinamica)
                 
-                total_verif = 0
+                # Encabezados
+                h_t = st.columns([2, 2, 2, 0.5])
+                h_t[0].caption("TALLA")
+                h_t[1].caption("CORTE (RATIO)")
+                h_t[2].caption("TOTAL A CORTAR (UNIDADES)")
+
+                total_verif_entero = 0
                 for idx, t_item in enumerate(st.session_state.curva_dinamica):
-                    if not isinstance(t_item, dict): continue
                     r_t = st.columns([2, 2, 2, 0.5])
                     ratio = int(t_item.get('cantidad', 0))
-                    t_final = (val_total_prendas / suma_cortes) * ratio if suma_cortes > 0 else 0
-                    total_verif += t_final
+                    
+                    # VALIDACIÓN 2: Cálculo con redondeo a entero
+                    unidades_talla = (val_total_prendas / suma_cortes) * ratio if suma_cortes > 0 else 0
+                    unidades_redondeadas = int(round(unidades_talla))
+                    total_verif_entero += unidades_redondeadas
+                    
                     r_t[0].write(f"**{t_item['talla']}**")
                     r_t[1].write(f"{ratio} partes")
-                    r_t[2].info(f"{int(round(t_final))} unidades")
+                    r_t[2].info(f"{unidades_redondeadas} und.") # Mostrar solo el entero
                     
+                    # Sugerencia: Eliminar para modificar
                     if not st.session_state.bloquear and not ya_enviado:
-                        if r_t[3].button("🗑️", key=f"del_talla_{idx}"):
-                            st.session_state.curva_dinamica.pop(idx); st.rerun()
+                        if r_t[3].button("🗑️", key=f"del_talla_{idx}", help="Eliminar esta talla"):
+                            st.session_state.curva_dinamica.pop(idx)
+                            st.rerun()
+                
                 st.divider()
-                st.metric("TOTAL CALCULADO", f"{int(round(total_verif))} / {val_total_prendas} prendas")
+                # Mostrar comparación de total pedido vs total calculado por redondeo
+                st.metric("TOTAL CALCULADO (REDONDEADO)", f"{total_verif_entero} de {val_total_prendas} prendas")
+                if total_verif_entero != val_total_prendas:
+                    st.caption("⚠️ Nota: El total puede variar ligeramente debido al redondeo de unidades por talla.")
 
+
+# --- 6. FOTOS ---
+        
         with st.container(border=True):
             st.subheader("6. Fotos")
             st.file_uploader("Subir fotos", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'], disabled=st.session_state.bloquear or ya_enviado)
