@@ -71,7 +71,7 @@ if modulo == "👗 Diseño":
                     st.session_state.bloquear = True
                     st.session_state.confirmar_envio = False
                     st.session_state.insumos_temp = [] 
-                    st.session_state.curva_dinamica = [] # Limpiar para forzar recarga
+                    st.session_state.curva_dinamica = [] 
                     st.rerun()
         except: st.warning("No se pudo cargar el historial.")
 
@@ -95,14 +95,12 @@ if modulo == "👗 Diseño":
                 datos_db = res.data[0]
                 ya_enviado = datos_db.get('estado') == "Pendiente Patronaje"
                 
-                # Sincronización de Insumos
                 if not st.session_state.insumos_temp and datos_db.get('insumos_detalle'):
                     st.session_state.insumos_temp = datos_db.get('insumos_detalle')
                 
-                # Sincronización de Curva (Solo si la sesión está vacía o es una consulta nueva)
-                db_curva = datos_db.get('curva_tallas', [])
-                if not st.session_state.curva_dinamica and db_curva:
-                    st.session_state.curva_dinamica = db_curva if isinstance(db_curva, list) else []
+                # Carga inmediata para asegurar que no esté vacío al iniciar
+                if not st.session_state.curva_dinamica:
+                    st.session_state.curva_dinamica = datos_db.get('curva_tallas', [])
 
         cats = ["Seleccionar...", "Pantalón", "Falda", "Blusa", "Casaca", "Polo"]
         ests = ["Seleccionar...", "Skinny", "Mom Fit", "Oversize", "Straight", "Slim"]
@@ -156,12 +154,12 @@ if modulo == "👗 Diseño":
             with cs1: val_lav = st.text_input("Lavado", value=datos_db.get('color_lavado', ""), disabled=st.session_state.bloquear or ya_enviado)
             with cs2: val_art = st.text_input("Arte", value=datos_db.get('detalles_arte', ""), disabled=st.session_state.bloquear or ya_enviado)
 
-        # --- SECCIÓN 5: TALLAS (MODO CONSULTA CORREGIDO) ---
+        # --- SECCIÓN 5: TALLAS (SOLUCIÓN MODO CONSULTA) ---
         with st.container(border=True):
             st.subheader("5. Tallas y Planificación de Corte")
             
-            # Usar directamente los datos de DB si la sesión está vacía (para visualización inmediata)
-            curva_a_mostrar = st.session_state.curva_dinamica if st.session_state.curva_dinamica else datos_db.get('curva_tallas', [])
+            # Forzamos que 'curva' use los datos de sesión si existen, o los de la base de datos directamente
+            curva = st.session_state.curva_dinamica if st.session_state.curva_dinamica else datos_db.get('curva_tallas', [])
             
             if not st.session_state.bloquear and not ya_enviado:
                 st.markdown("**1. Armar el Tizado**")
@@ -171,15 +169,14 @@ if modulo == "👗 Diseño":
                 r_val = c2.number_input("Piezas en Tizado", min_value=1, step=1, key="ratio_v6")
                 if c3.button("➕ Añadir"):
                     if t_sel != "Seleccionar...":
-                        actuales = [item['talla'] for item in st.session_state.curva_dinamica if isinstance(item, dict)]
+                        actuales = [item['talla'] for item in st.session_state.curva_dinamica]
                         if t_sel not in actuales:
                             st.session_state.curva_dinamica.append({"talla": t_sel, "cantidad": r_val})
                             st.rerun()
 
-            # Cálculo y Visualización
-            if curva_a_mostrar and isinstance(curva_a_mostrar, list):
+            if curva and isinstance(curva, list):
                 st.divider()
-                suma_tizado = sum(int(item.get('cantidad', 0)) for item in curva_a_mostrar if isinstance(item, dict))
+                suma_tizado = sum(int(item.get('cantidad', 0)) for item in curva if isinstance(item, dict))
                 
                 if suma_tizado > 0:
                     val_db_cant = datos_db.get('cantidad_paquetes', suma_tizado)
@@ -189,12 +186,12 @@ if modulo == "👗 Diseño":
                     total_real = n_capas * suma_tizado
                     
                     if total_real != cant_pedida:
-                        st.warning(f"Ajuste automático a capas completas: {total_real} prendas.")
+                        st.warning(f"Ajuste: {total_real} prendas ({n_capas} capas).")
 
                     h = st.columns([2, 2, 2, 0.5])
                     h[0].caption("TALLA"); h[1].caption("EN TIZADO"); h[2].caption("TOTAL UNIDADES")
 
-                    for idx, item in enumerate(curva_a_mostrar):
+                    for idx, item in enumerate(curva):
                         if isinstance(item, dict):
                             fila = st.columns([2, 2, 2, 0.5])
                             v_pzs = int(item.get('cantidad', 0))
@@ -206,7 +203,7 @@ if modulo == "👗 Diseño":
                                     st.session_state.curva_dinamica.pop(idx); st.rerun()
                     st.metric("TOTAL REAL A CORTAR", f"{total_real} prendas")
             else:
-                st.info("Sin tallas registradas en esta muestra.")
+                st.info("Sin tallas registradas.")
                 total_real = 0
 
         # --- 6. FOTOS Y BOTONES ---
