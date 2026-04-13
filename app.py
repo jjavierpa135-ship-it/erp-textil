@@ -11,7 +11,7 @@ try:
 except Exception as e:
     st.error(f"Error de conexión: {e}"); st.stop()
 
-# --- 3. ESTADOS DE SESIÓN (Inicialización Limpia) ---
+# --- 3. ESTADOS DE SESIÓN ---
 if 'codigo_actual' not in st.session_state:
     st.session_state.codigo_actual = "Cargando..."
 if 'bloquear' not in st.session_state:
@@ -56,6 +56,7 @@ st.sidebar.title("🏢 ERP Pilar Jeans")
 modulo = st.sidebar.radio("Menú", ["👗 Diseño", "📦 Almacén"])
 
 if modulo == "👗 Diseño":
+    # --- BUSCADOR ---
     with st.expander("🔍 Buscador de Muestras", expanded=False):
         try:
             res_busqueda = supabase.table("fichas_muestras").select("codigo_muestra, estilo, estado, fecha_creacion").order("fecha_creacion", desc=True).limit(50).execute()
@@ -77,6 +78,7 @@ if modulo == "👗 Diseño":
 
     st.divider()
 
+    # --- CABECERA ---
     col_t, col_c, col_b = st.columns([2, 1, 1])
     with col_t: st.title("Ficha Técnica")
     with col_c: st.metric("Muestra Activa", st.session_state.codigo_actual)
@@ -94,27 +96,19 @@ if modulo == "👗 Diseño":
             if res.data:
                 datos_db = res.data[0]
                 ya_enviado = datos_db.get('estado') == "Pendiente Patronaje"
-                
-                # Sincronización de Insumos
                 if not st.session_state.insumos_temp and datos_db.get('insumos_detalle'):
                     st.session_state.insumos_temp = datos_db.get('insumos_detalle')
-                
-                # Sincronización de Tallas (Verificando que sea lista válida)
-                if not st.session_state.curva_dinamica:
-                    val_tallas = datos_db.get('curva_tallas')
-                    if isinstance(val_tallas, list):
-                        st.session_state.curva_dinamica = val_tallas
-                    else:
-                        st.session_state.curva_dinamica = []
+                if not st.session_state.curva_dinamica and datos_db.get('curva_tallas'):
+                    st.session_state.curva_dinamica = datos_db.get('curva_tallas')
 
-        # Listas de opciones
+        # Listas para Selectbox
         cats = ["Seleccionar...", "Pantalón", "Falda", "Blusa", "Casaca", "Polo"]
         ests = ["Seleccionar...", "Skinny", "Mom Fit", "Oversize", "Straight", "Slim"]
         pats = ["Seleccionar...", "Patronista 1", "Patronista 2", "Patronista 3"]
         dis_lista = ["Seleccionar...", "Ariana", "Diseñadora 2", "Diseñadora 3"]
         prioridades = ["Normal", "Urgente", "Muestra VIP"]
 
-        # 1. Datos de Cabecera
+        # --- SECCIONES 1 A 4 ---
         with st.container(border=True):
             st.subheader("1. Datos de Cabecera")
             c1, c2, c3, c4 = st.columns(4)
@@ -123,72 +117,35 @@ if modulo == "👗 Diseño":
             with c3: val_est = st.selectbox("Estilo", ests, index=obtener_indice(ests, datos_db.get('estilo')), key=f"e_{st.session_state.form_id}", disabled=st.session_state.bloquear or ya_enviado)
             with c4: val_prior = st.selectbox("Prioridad", prioridades, index=obtener_indice(prioridades, datos_db.get('prioridad')), key=f"pr_{st.session_state.form_id}", disabled=st.session_state.bloquear or ya_enviado)
 
-            c5, c6, c7 = st.columns(3)
-            with c5:
-                fecha_f = datos_db.get('fecha_creacion', datetime.date.today().strftime('%Y-%m-%d'))
-                st.text_input("Fecha Creación", value=str(fecha_f)[:10], disabled=True)
-            with c6:
-                val_pat = st.selectbox("Patronista Asignado", pats, index=obtener_indice(pats, datos_db.get('patronista_responsable')), key=f"p_{st.session_state.form_id}", disabled=st.session_state.bloquear or ya_enviado)
-            with c7:
-                f_envio = datos_db.get('fecha_envio_patronaje', "No enviado")
-                st.text_input("Fecha/Hora Envío", value=str(f_envio).replace("T", " ")[:16], disabled=True)
-
-        # 2. Especificaciones
         with st.container(border=True):
             st.subheader("2. Especificaciones de Diseño")
             cd1, cd2 = st.columns(2)
             with cd1:
                 val_desc = st.text_area("Descripción de la Prenda", value=datos_db.get('desc_prenda', ""), disabled=st.session_state.bloquear or ya_enviado, height=100)
                 val_entalle = st.text_input("Referencia de Entalle", value=datos_db.get('ref_entalle', ""), disabled=st.session_state.bloquear or ya_enviado)
-                val_proc = st.text_input("Procesos Auxiliares", value=datos_db.get('procesos_aux', ""), disabled=st.session_state.bloquear or ya_enviado)
             with cd2:
                 val_obs_dis = st.text_area("Observaciones de Diseño", value=datos_db.get('observaciones_contra', ""), disabled=st.session_state.bloquear or ya_enviado, height=100)
-                val_rec = st.text_area("Recomendaciones y Observaciones", value=datos_db.get('rec_observaciones', ""), disabled=st.session_state.bloquear or ya_enviado, height=100)
-            val_obs_molde = st.text_input("Observaciones de Molde", value=datos_db.get('obs_molde', ""), disabled=st.session_state.bloquear or ya_enviado)
+                val_rec = st.text_area("Recomendaciones", value=datos_db.get('rec_observaciones', ""), disabled=st.session_state.bloquear or ya_enviado, height=100)
 
-        # 3. Telas e Insumos
         with st.container(border=True):
             st.subheader("3. Telas e Insumos")
             telas_lista = ["Seleccionar...", "Denim 12oz", "Denim 10oz", "Gabardina", "Jersey", "Tocuyo"]
             ci1, ci2 = st.columns(2)
             with ci1: val_t1 = st.selectbox("Tela Principal", telas_lista, index=obtener_indice(telas_lista, datos_db.get('tela_1')), disabled=st.session_state.bloquear or ya_enviado)
             with ci2: val_t2 = st.selectbox("Tela Complemento", telas_lista, index=obtener_indice(telas_lista, datos_db.get('tela_2')), disabled=st.session_state.bloquear or ya_enviado)
-            
-            try:
-                res_mats = supabase.table("almacen_insumos").select("nombre, precio_unitario").execute()
-                opciones_mats = [m['nombre'] for m in res_mats.data] if res_mats.data else []
-                precios_mats = {m['nombre']: m['precio_unitario'] for m in res_mats.data} if res_mats.data else {}
-            except: opciones_mats, precios_mats = [], {}
 
-            total_insumos = 0.0
-            for item in st.session_state.insumos_temp:
-                if isinstance(item, dict):
-                    total_insumos += item.get('cantidad', 0) * item.get('precio', 0.0)
-            st.metric("COSTO TOTAL INSUMOS", f"${total_insumos:.2f}")
-
-            if not st.session_state.bloquear and not ya_enviado:
-                with st.expander("➕ Añadir Material de Almacén"):
-                    f1, f2, f3 = st.columns([2, 1, 1])
-                    insumo_nom = f1.selectbox("Seleccionar Insumo", ["Buscar..."] + opciones_mats)
-                    insumo_cant = f2.number_input("Cantidad", min_value=0.0)
-                    if f3.button("Agregar Insumo"):
-                        if insumo_nom != "Buscar...":
-                            st.session_state.insumos_temp.append({"codigo": insumo_nom, "cantidad": insumo_cant, "precio": precios_mats.get(insumo_nom, 0.0)})
-                            st.rerun()
-
-        # 4. Servicios y Lavandería
         with st.container(border=True):
             st.subheader("4. Servicios y Lavandería")
             cs1, cs2 = st.columns(2)
             with cs1: val_lav = st.text_input("Lavado", value=datos_db.get('color_lavado', ""), disabled=st.session_state.bloquear or ya_enviado)
             with cs2: val_art = st.text_input("Arte", value=datos_db.get('detalles_arte', ""), disabled=st.session_state.bloquear or ya_enviado)
 
-        # 5. Tallas y Planificación
+        # --- SECCIÓN 5: TALLAS (ESTA ES LA QUE DABA ERROR) ---
         with st.container(border=True):
             col_t_tit, col_t_res = st.columns([3, 1])
             col_t_tit.subheader("5. Tallas y Planificación de Corte")
             
-            if st.session_state.curva_dinamica is None:
+            if not isinstance(st.session_state.curva_dinamica, list):
                 st.session_state.curva_dinamica = []
 
             if not st.session_state.bloquear and not ya_enviado:
@@ -197,55 +154,51 @@ if modulo == "👗 Diseño":
                     st.rerun()
 
                 st.markdown("**1. Armar el Tizado (Proporción por capa)**")
-                c1, c2, c3 = st.columns([2, 2, 1])
+                c_tal, c_can, c_add = st.columns([2, 2, 1])
                 t_ops = ["Seleccionar...", "26", "28", "30", "32", "34", "36", "S", "M", "L", "XL"]
-                t_sel = c1.selectbox("Talla", t_ops, key="selector_talla_v6")
-                r_val = c2.number_input("Piezas en Tizado", min_value=1, step=1, key="ratio_v6")
+                t_sel = c_tal.selectbox("Talla", t_ops, key="selector_talla_final")
+                r_val = c_can.number_input("Piezas en Tizado", min_value=1, step=1, key="ratio_final")
                 
-                if c3.button("➕ Añadir"):
+                if c_add.button("➕ Añadir"):
                     if t_sel != "Seleccionar...":
                         actuales = [item['talla'] for item in st.session_state.curva_dinamica if isinstance(item, dict)]
-                        if t_sel in actuales:
-                            st.warning(f"La talla {t_sel} ya está en la lista.")
-                        else:
+                        if t_sel not in actuales:
                             st.session_state.curva_dinamica.append({"talla": t_sel, "cantidad": r_val})
                             st.rerun()
 
+            # Cálculo Seguro
             suma_tizado = sum(int(i.get('cantidad', 0)) for i in st.session_state.curva_dinamica if isinstance(i, dict))
             
             if suma_tizado > 0:
                 st.divider()
-                st.markdown(f"**2. Definir Cantidad del Pedido** (Tizado actual: {suma_tizado} pzs por capa)")
+                st.markdown(f"**2. Definir Cantidad del Pedido** (Tizado: {suma_tizado} pzs/capa)")
                 
-                val_inicial = max(suma_tizado, int(datos_db.get('cantidad_paquetes', suma_tizado)))
-                cant_pedida = st.number_input("¿Cuántas prendas desea en total?", min_value=1, value=val_inicial, disabled=st.session_state.bloquear or ya_enviado)
+                cant_pedida = st.number_input("Prendas totales deseadas", min_value=1, value=max(suma_tizado, int(datos_db.get('cantidad_paquetes', suma_tizado))), disabled=st.session_state.bloquear or ya_enviado)
 
+                # Cálculo de capas y total
                 n_capas = (cant_pedida + suma_tizado - 1) // suma_tizado
                 total_real = n_capas * suma_tizado
                 
                 if total_real != cant_pedida:
-                    st.warning(f"⚠️ **Ajuste:** Para un tizado de {suma_tizado} pzs, se cortarán **{n_capas} capas** ({total_real} unidades).")
+                    st.info(f"Se cortarán **{n_capas} capas** para un total de **{total_real}** prendas.")
 
-                h = st.columns([2, 2, 2, 0.5])
-                h[0].caption("TALLA"); h[1].caption("EN TIZADO"); h[2].caption("TOTAL UNIDADES")
-
+                # Tabla de Resumen
                 for idx, item in enumerate(st.session_state.curva_dinamica):
-                    fila = st.columns([2, 2, 2, 0.5])
+                    f_col = st.columns([2, 2, 2, 0.5])
                     v_pzs = int(item.get('cantidad', 0))
-                    fila[0].write(f"**{item['talla']}**")
-                    fila[1].write(f"{v_pzs} pzs")
-                    fila[2].info(f"{n_capas * v_pzs} und.")
+                    f_col[0].write(f"Talla {item['talla']}")
+                    f_col[1].write(f"{v_pzs} pzs")
+                    f_col[2].info(f"{n_capas * v_pzs} unidades")
                     if not st.session_state.bloquear and not ya_enviado:
-                        if fila[3].button("🗑️", key=f"del_v6_{idx}"):
+                        if f_col[3].button("🗑️", key=f"del_final_{idx}"):
                             st.session_state.curva_dinamica.pop(idx); st.rerun()
                 
-                st.divider()
-                st.metric("TOTAL REAL A CORTAR", f"{total_real} prendas")
+                st.metric("TOTAL FINAL A CORTAR", f"{total_real} prendas")
             else:
-                st.info("Agregue al menos una talla para definir la cantidad.")
+                st.info("Agregue tallas para habilitar los cálculos de corte.")
                 total_real = 0
 
-        # Botones de Acción
+        # --- BOTONES FINALES ---
         st.divider()
         b1, b2, b3 = st.columns(3)
 
@@ -253,28 +206,25 @@ if modulo == "👗 Diseño":
             if st.button("💾 Guardar Todo", use_container_width=True, disabled=ya_enviado):
                 cod_id = st.session_state.codigo_actual if st.session_state.codigo_actual != "S/C" else f"M-{datetime.datetime.now().strftime('%y%m%d%H%M')}"
                 payload = {
-                    "codigo_muestra": cod_id,
-                    "categoria": val_cat, "estilo": val_est, "disenadora": val_dis, "prioridad": val_prior,
-                    "patronista_responsable": val_pat, "observaciones_contra": val_obs_dis, "desc_prenda": val_desc,
+                    "codigo_muestra": cod_id, "categoria": val_cat, "estilo": val_est, "disenadora": val_dis,
+                    "prioridad": val_prior, "patronista_responsable": val_pat, "desc_prenda": val_desc,
                     "tela_1": val_t1, "curva_tallas": st.session_state.curva_dinamica,
                     "cantidad_paquetes": total_real, "estado": "Borrador"
                 }
                 supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
                 st.session_state.codigo_actual = cod_id; st.session_state.bloquear = True
-                st.success(f"Guardado como {cod_id}"); st.rerun()
+                st.success("Guardado correctamente"); st.rerun()
 
         with b2:
-            p_e = st.session_state.bloquear and st.session_state.codigo_actual != "S/C" and not ya_enviado
             if not st.session_state.confirmar_envio:
-                if st.button("🚀 Enviar a Patronaje", use_container_width=True, disabled=not p_e):
+                if st.button("🚀 Enviar a Patronaje", use_container_width=True, disabled=not (st.session_state.bloquear and not ya_enviado)):
                     st.session_state.confirmar_envio = True; st.rerun()
             else:
                 st.warning("¿Confirmar envío?")
-                c_si, c_no = st.columns(2)
-                if c_si.button("✅ Sí"):
+                if st.button("✅ Confirmar"):
                     supabase.table("fichas_muestras").update({"estado": "Pendiente Patronaje", "fecha_envio_patronaje": datetime.datetime.now().isoformat()}).eq("codigo_muestra", st.session_state.codigo_actual).execute()
                     st.session_state.confirmar_envio = False; st.rerun()
-                if c_no.button("❌ No"):
+                if st.button("❌ Cancelar"):
                     st.session_state.confirmar_envio = False; st.rerun()
 
         with b3:
