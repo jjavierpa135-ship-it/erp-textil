@@ -205,73 +205,55 @@ if modulo == "👗 Diseño":
             with cs2:
                 val_art = st.text_input("Bordado / Estampado", value=datos_db.get('detalles_arte', ""), disabled=st.session_state.bloquear or ya_enviado)
 
-# --- 5. TALLAS Y PLANIFICACIÓN DE CORTE (LÓGICA PROPORCIONAL) ---
+        # --- 5. TALLAS Y PLANIFICACIÓN DE CORTE (LÓGICA PROPORCIONAL) ---
         with st.container(border=True):
             st.subheader("5. Tallas y Planificación de Corte")
             
-            # 1. Ingreso del pedido total
+            # 1. Ingreso del pedido total (Esta es la variable que causaba el error)
             val_total_pedido = st.number_input("Cantidad total de prendas a hacer", min_value=1, 
                                               value=int(datos_db.get('cantidad_paquetes', 10)), 
                                               disabled=st.session_state.bloquear or ya_enviado, key="input_total_pedido")
 
             st.divider()
 
-            # 2. Interfaz para añadir tallas (Configurar Proporción)
             if not st.session_state.bloquear and not ya_enviado:
                 st.markdown("**Configurar Proporción de Corte**")
                 col_add1, col_add2, col_add3 = st.columns([2, 2, 1])
                 
                 lista_tallas_combo = ["Seleccionar...", "26", "28", "30", "32", "34", "36", "S", "M", "L", "XL"]
-                
-                # Usamos los widgets sin intentar setear su valor manualmente desde afuera para evitar el error de la imagen
                 nueva_t = col_add1.selectbox("Seleccionar Talla", lista_tallas_combo, key="tmp_talla")
                 nueva_c = col_add2.number_input("Corte (Proporción)", min_value=1, step=1, key="tmp_corte")
                 
                 if col_add3.button("➕ Añadir", use_container_width=True):
                     if nueva_t != "Seleccionar...":
-                        # Añadimos a la lista
                         st.session_state.curva_dinamica.append({"talla": nueva_t, "cantidad": nueva_c})
-                        # Para limpiar los campos sin error, reseteamos las llaves específicas
                         st.rerun()
 
-            # 3. Visualización y Cálculo Matemático
             if st.session_state.curva_dinamica:
-                # Sumamos todos los 'Cortes' (ratios)
                 suma_cortes = sum(int(item.get('cantidad', 0)) for item in st.session_state.curva_dinamica if isinstance(item, dict))
-                
                 h_t = st.columns([2, 2, 2, 0.5])
                 h_t[0].caption("TALLA"); h_t[1].caption("CORTE (RATIO)"); h_t[2].caption("TOTAL A CORTAR")
 
                 total_verificacion = 0
                 for idx, t_item in enumerate(st.session_state.curva_dinamica):
                     if not isinstance(t_item, dict): continue
-                    
                     r_t = st.columns([2, 2, 2, 0.5])
                     corte_ratio = int(t_item.get('cantidad', 0))
                     
-                    # CÁLCULO: (Total / Suma de proporciones) * Proporción individual
-                    if suma_cortes > 0:
-                        t_final = (val_total_pedido / suma_cortes) * corte_ratio
-                    else:
-                        t_final = 0
-                    
+                    # Cálculo proporcional
+                    t_final = (val_total_pedido / suma_cortes) * corte_ratio if suma_cortes > 0 else 0
                     total_verificacion += t_final
                     
                     r_t[0].write(f"**{t_item['talla']}**")
                     r_t[1].write(f"{corte_ratio} partes")
-                    # Usamos round() para que el entero sea el más cercano a la realidad
-                    r_t[2].info(f"{int(round(t_final))} unidades") 
+                    r_t[2].info(f"{int(round(t_final))} unidades")
                     
                     if not st.session_state.bloquear and not ya_enviado:
                         if r_t[3].button("🗑️", key=f"del_talla_{idx}"):
-                            st.session_state.curva_dinamica.pop(idx)
-                            st.rerun()
+                            st.session_state.curva_dinamica.pop(idx); st.rerun()
                 
                 st.divider()
-                st.write(f"Suma de proporciones: **{suma_cortes}**")
                 st.metric("TOTAL CALCULADO", f"{int(round(total_verificacion))} / {val_total_pedido} prendas")
-            else:
-                st.info("Añade tallas y proporciones para calcular el corte.")
                 
         # 6. FOTOS
         with st.container(border=True):
@@ -289,15 +271,29 @@ if modulo == "👗 Diseño":
                     if cod == "S/C":
                         cod = f"{val_cat[:3].upper()}-{val_est[:3].upper()}-{datetime.datetime.now().strftime('%y%m%d%H%M')}"
                     
-                    payload = {
-                        "codigo_muestra": cod, "categoria": val_cat, "estilo": val_est, "disenadora": val_dis,
-                        "prioridad": val_prior, "patronista_responsable": val_pat, "observaciones_contra": val_obs_dis,
-                        "desc_prenda": val_desc, "ref_entalle": val_entalle, "procesos_aux": val_proc,
-                        "rec_observaciones": val_rec, "obs_molde": val_obs_molde, "tela_1": val_t1, "tela_2": val_t2,
-                        "insumos_detalle": st.session_state.insumos_temp, "color_lavado": val_lav, "detalles_arte": val_art,
-                        "curva_tallas": st.session_state.curva_dinamica, # FORMATO DINÁMICO
-                        "cantidad_paquetes": val_paq, "estado": "Borrador"
-                    }
+                        payload = {
+                                        "codigo_muestra": cod, 
+                                        "categoria": val_cat, 
+                                        "estilo": val_est, 
+                                        "disenadora": val_dis,
+                                        "prioridad": val_prior, 
+                                        "patronista_responsable": val_pat, 
+                                        "observaciones_contra": val_obs_dis,
+                                        "desc_prenda": val_desc, 
+                                        "ref_entalle": val_entalle, 
+                                        "procesos_aux": val_proc,
+                                        "rec_observaciones": val_rec, 
+                                        "obs_molde": val_obs_molde, 
+                                        "tela_1": val_t1, 
+                                        "tela_2": val_t2,
+                                        "insumos_detalle": st.session_state.insumos_temp, 
+                                        "color_lavado": val_lav, 
+                                        "detalles_arte": val_art,
+                                        "curva_tallas": st.session_state.curva_dinamica, 
+                                        "cantidad_paquetes": val_total_pedido, # <--- CAMBIO AQUÍ (antes era val_paq)
+                                        "estado": "Borrador"
+                                    }
+                                            
                     try:
                         supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
                         st.session_state.codigo_actual = cod
