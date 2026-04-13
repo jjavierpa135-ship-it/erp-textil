@@ -1,83 +1,244 @@
 import streamlit as st
 from supabase import create_client, Client
-import json
+import datetime
 
-# --- 1. CONEXIÓN ---
+# --- 1. CONFIGURACIÓN ---
+st.set_page_config(page_title="ERP Pilar Jeans", page_icon="👗", layout="wide")
+
+# --- 2. CONEXIÓN A DB ---
 try:
     supabase: Client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-except:
-    st.error("Error de conexión"); st.stop()
+except Exception as e:
+    st.error(f"Error de conexión: {e}"); st.stop()
 
-st.title("🚀 Diagnóstico de Guardado")
+# --- 3. ESTADOS DE SESIÓN ---
+if 'codigo_actual' not in st.session_state:
+    st.session_state.codigo_actual = "Cargando..."
+if 'bloquear' not in st.session_state:
+    st.session_state.bloquear = True
+if 'form_id' not in st.session_state:
+    st.session_state.form_id = 0
+if 'confirmar_envio' not in st.session_state:
+    st.session_state.confirmar_envio = False
+if 'insumos_temp' not in st.session_state:
+    st.session_state.insumos_temp = []
+if 'curva_dinamica' not in st.session_state:
+    st.session_state.curva_dinamica = []
 
-# --- 2. ESTADOS ---
-if 'codigo_mvp' not in st.session_state: st.session_state.codigo_mvp = None
-if 'curva_mvp' not in st.session_state: st.session_state.curva_mvp = []
-if 'modo_edicion' not in st.session_state: st.session_state.modo_edicion = False
+# --- 4. FUNCIONES DE APOYO ---
+def limpiar_pantalla_total():
+    st.session_state.codigo_actual = "S/C"
+    st.session_state.bloquear = False
+    st.session_state.confirmar_envio = False
+    st.session_state.insumos_temp = []
+    st.session_state.curva_dinamica = []
+    st.session_state.form_id += 1 
+    for key in list(st.session_state.keys()):
+        if key.startswith(('c_', 'e_', 'p_', 'o_', 'd_', 'pr_', 'curva_', 'add_', 'tmp_')):
+            del st.session_state[key]
 
-# --- 3. SELECCIÓN ---
-res = supabase.table("fichas_muestras").select("codigo_muestra, estilo").order("fecha_creacion", desc=True).limit(5).execute()
-opciones = {f"{r['codigo_muestra']} - {r['estilo']}": r['codigo_muestra'] for r in res.data}
-seleccion = st.selectbox("Selecciona ficha:", ["Seleccionar..."] + list(opciones.keys()))
+def obtener_indice(lista, valor):
+    try:
+        return lista.index(valor)
+    except (ValueError, KeyError):
+        return 0
 
-if seleccion != "Seleccionar..." and st.button("🔍 Cargar Datos Reales"):
-    cod = opciones[seleccion]
-    res_f = supabase.table("fichas_muestras").select("*").eq("codigo_muestra", cod).execute()
-    if res_f.data:
-        st.session_state.codigo_mvp = cod
-        # CARGA SEGURA: Si es None o String, convertir a lista vacía
-        raw_curva = res_f.data[0].get('curva_tallas')
-        if isinstance(raw_curva, list):
-            st.session_state.curva_mvp = raw_curva
+# --- 5. CARGA INICIAL ---
+if st.session_state.codigo_actual == "Cargando...":
+    try:
+        res = supabase.table("fichas_muestras").select("codigo_muestra").order("fecha_creacion", desc=True).limit(1).execute()
+        st.session_state.codigo_actual = res.data[0]['codigo_muestra'] if res.data else "S/C"
+    except:
+        st.session_state.codigo_actual = "S/C"
+
+# --- 6. INTERFAZ ---
+st.sidebar.title("🏢 ERP Pilar Jeans")
+modulo = st.sidebar.radio("Menú", ["👗 Diseño", "📦 Almacén"])
+
+if modulo == "👗 Diseño":
+    with st.expander("🔍 Buscador de Muestras", expanded=False):
+        try:
+            res_busqueda = supabase.table("fichas_muestras").select("codigo_muestra, estilo, estado, fecha_creacion").order("fecha_creacion", desc=True).limit(50).execute()
+            opciones_busqueda = ["Seleccionar..."] + [
+                f"{str(r['fecha_creacion'])[:10]} | {r['codigo_muestra']} | {r['estilo']} | [{r['estado'].upper()}]" 
+                for r in res_busqueda.data
+            ]
+            seleccion = st.selectbox("Filtrar:", opciones_busqueda)
+            if seleccion != "Seleccionar...":
+                nuevo_cod = seleccion.split(" | ")[1]
+                if st.button("Abrir Ficha"):
+                    st.session_state.codigo_actual = nuevo_cod
+                    st.session_state.bloquear = True
+                    st.session_state.confirmar_envio = False
+                    st.session_state.insumos_temp = [] 
+                    st.session_state.curva_dinamica = [] 
+                    st.rerun()
+        except: st.warning("No se pudo cargar el historial.")
+
+    st.divider()
+
+    col_t, col_c, col_b = st.columns([2, 1, 1])
+    with col_t: st.title("Ficha Técnica")
+    with col_c: st.metric("Muestra Activa", st.session_state.codigo_actual)
+    with col_b: st.button("➕ Nueva Ficha", on_click=limpiar_pantalla_total, use_container_width=True)
+
+    tab1, tab2 = st.tabs(["🎨 Ficha de Diseño", "📐 Patronaje"])
+
+    with tab1:
+        es_nuevo = st.session_state.codigo_actual == "S/C"
+        datos_db = {}
+        ya_enviado = False
+        
+        if not es_nuevo:
+            res = supabase.table("fichas_muestras").select("*").eq("codigo_muestra", st.session_state.codigo_actual).execute()
+            if res.data:
+                datos_db = res.data[0]
+                ya_enviado = datos_db.get('estado') == "Pendiente Patronaje"
+
+        # --- SELECCIÓN DE FUENTE DE DATOS (FIX PARA CONSULTA) ---
+        if st.session_state.bloquear:
+            # En modo consulta, mandan los datos de la base de datos
+            insumos_a_mostrar = datos_db.get('insumos_detalle', [])
+            curva_a_mostrar = datos_db.get('curva_tallas', [])
         else:
-            st.session_state.curva_mvp = []
-        st.session_state.modo_edicion = False
-        st.rerun()
+            # En modo edición, cargamos la sesión si está vacía, sino usamos lo que el usuario está operando
+            if not st.session_state.insumos_temp and datos_db.get('insumos_detalle'):
+                st.session_state.insumos_temp = datos_db.get('insumos_detalle')
+            if not st.session_state.curva_dinamica and datos_db.get('curva_tallas'):
+                st.session_state.curva_dinamica = datos_db.get('curva_tallas')
+            
+            insumos_a_mostrar = st.session_state.insumos_temp
+            curva_a_mostrar = st.session_state.curva_dinamica
 
-st.divider()
+        # --- SECCIÓN 1: CABECERA ---
+        cats = ["Seleccionar...", "Pantalón", "Falda", "Blusa", "Casaca", "Polo"]
+        ests = ["Seleccionar...", "Skinny", "Mom Fit", "Oversize", "Straight", "Slim"]
+        pats = ["Seleccionar...", "Patronista 1", "Patronista 2", "Patronista 3"]
+        dis_lista = ["Seleccionar...", "Ariana", "Diseñadora 2", "Diseñadora 3"]
+        prioridades = ["Normal", "Urgente", "Muestra VIP"]
 
-# --- 4. ÁREA DE TRABAJO ---
-if st.session_state.codigo_mvp:
-    st.subheader(f"Ficha: {st.session_state.codigo_mvp}")
-    
-    if st.checkbox("🛠️ Activar Modo Edición"):
-        st.session_state.modo_edicion = True
-    else:
-        st.session_state.modo_edicion = False
+        with st.container(border=True):
+            st.subheader("1. Datos de Cabecera")
+            c1, c2, c3, c4 = st.columns(4)
+            with c1: val_dis = st.selectbox("Diseñadora", dis_lista, index=obtener_indice(dis_lista, datos_db.get('disenadora')), key=f"d_{st.session_state.form_id}", disabled=st.session_state.bloquear or ya_enviado)
+            with c2: val_cat = st.selectbox("Categoría", cats, index=obtener_indice(cats, datos_db.get('categoria')), key=f"c_{st.session_state.form_id}", disabled=st.session_state.bloquear or ya_enviado)
+            with c3: val_est = st.selectbox("Estilo", ests, index=obtener_indice(ests, datos_db.get('estilo')), key=f"e_{st.session_state.form_id}", disabled=st.session_state.bloquear or ya_enviado)
+            with c4: val_prior = st.selectbox("Prioridad", prioridades, index=obtener_indice(prioridades, datos_db.get('prioridad')), key=f"pr_{st.session_state.form_id}", disabled=st.session_state.bloquear or ya_enviado)
 
-    # MOSTRAR DATOS ACTUALES
-    st.write("### Datos en Memoria:")
-    if st.session_state.curva_mvp:
-        st.table(st.session_state.curva_mvp)
-    else:
-        st.info("La lista está vacía actualmente.")
+            c5, c6, c7 = st.columns(3)
+            with c5:
+                fecha_f = datos_db.get('fecha_creacion', datetime.date.today().strftime('%Y-%m-%d'))
+                st.text_input("Fecha Creación", value=str(fecha_f)[:10], disabled=True)
+            with c6:
+                val_pat = st.selectbox("Patronista Asignado", pats, index=obtener_indice(pats, datos_db.get('patronista_responsable')), key=f"p_{st.session_state.form_id}", disabled=st.session_state.bloquear or ya_enviado)
+            with c7:
+                f_envio = datos_db.get('fecha_envio_patronaje', "No enviado")
+                st.text_input("Fecha/Hora Envío", value=str(f_envio).replace("T", " ")[:16], disabled=True)
 
-    # AGREGAR TALLAS (Solo si modo edición está activo)
-    if st.session_state.modo_edicion:
-        with st.expander("Añadir Nueva Talla", expanded=True):
-            col1, col2, col3 = st.columns(3)
-            t = col1.text_input("Talla")
-            c = col2.number_input("Cantidad", min_value=1, value=1)
-            if col3.button("➕ Agregar a Lista"):
-                st.session_state.curva_mvp.append({"talla": t, "cantidad": c})
+        with st.container(border=True):
+            st.subheader("2. Especificaciones de Diseño")
+            cd1, cd2 = st.columns(2)
+            with cd1:
+                val_desc = st.text_area("Descripción de la Prenda", value=datos_db.get('desc_prenda', ""), disabled=st.session_state.bloquear or ya_enviado, height=100)
+                val_entalle = st.text_input("Referencia de Entalle", value=datos_db.get('ref_entalle', ""), disabled=st.session_state.bloquear or ya_enviado)
+                val_proc = st.text_input("Procesos Auxiliares", value=datos_db.get('procesos_aux', ""), disabled=st.session_state.bloquear or ya_enviado)
+            with cd2:
+                val_obs_dis = st.text_area("Observaciones de Diseño", value=datos_db.get('observaciones_contra', ""), disabled=st.session_state.bloquear or ya_enviado, height=100)
+                val_rec = st.text_area("Recomendaciones y Observaciones", value=datos_db.get('rec_observaciones', ""), disabled=st.session_state.bloquear or ya_enviado, height=100)
+            val_obs_molde = st.text_input("Observaciones de Molde", value=datos_db.get('obs_molde', ""), disabled=st.session_state.bloquear or ya_enviado)
+
+        with st.container(border=True):
+            st.subheader("3. Telas e Insumos")
+            total_insumos = sum(float(item.get('cantidad', 0)) * float(item.get('precio', 0.0)) for item in insumos_a_mostrar if isinstance(item, dict))
+            st.metric("COSTO TOTAL INSUMOS", f"${total_insumos:.2f}")
+
+            # Mostrar tabla de insumos
+            if insumos_a_mostrar:
+                for idx, item in enumerate(insumos_a_mostrar):
+                    if isinstance(item, dict):
+                        ri1, ri2, ri3 = st.columns([3, 1, 0.5])
+                        ri1.write(f"• {item.get('codigo')}")
+                        ri2.write(f"{item.get('cantidad')} uds")
+                        if not st.session_state.bloquear and not ya_enviado:
+                            if ri3.button("🗑️", key=f"del_ins_{idx}"):
+                                st.session_state.insumos_temp.pop(idx); st.rerun()
+
+            if not st.session_state.bloquear and not ya_enviado:
+                with st.expander("➕ Añadir Material"):
+                    # (Aquí iría tu lógica de agregar insumos de almacén)
+                    st.caption("Usa el buscador para añadir insumos.")
+
+        # --- SECCIÓN 5: TALLAS (CORREGIDA) ---
+        with st.container(border=True):
+            st.subheader("5. Tallas y Planificación de Corte")
+            
+            if not st.session_state.bloquear and not ya_enviado:
+                st.markdown("**1. Armar el Tizado**")
+                c1, c2, c3 = st.columns([2, 2, 1])
+                t_ops = ["Seleccionar...", "26", "28", "30", "32", "34", "36", "S", "M", "L", "XL"]
+                t_sel = c1.selectbox("Talla", t_ops, key="selector_talla_v6")
+                r_val = c2.number_input("Piezas", min_value=1, step=1, key="ratio_v6")
+                if c3.button("➕ Añadir"):
+                    if t_sel != "Seleccionar...":
+                        st.session_state.curva_dinamica.append({"talla": t_sel, "cantidad": r_val})
+                        st.rerun()
+
+            # Lógica de cálculo y visualización
+            if curva_a_mostrar:
+                suma_tizado = sum(int(i.get('cantidad', 0)) for i in curva_a_mostrar if isinstance(i, dict))
+                if suma_tizado > 0:
+                    val_db_cant = datos_db.get('cantidad_paquetes', suma_tizado)
+                    cant_pedida = st.number_input("Total Prendas Pedidas", min_value=1, value=int(val_db_cant), disabled=st.session_state.bloquear or ya_enviado)
+                    
+                    n_capas = (cant_pedida + suma_tizado - 1) // suma_tizado
+                    total_real = n_capas * suma_tizado
+                    
+                    h = st.columns([2, 2, 2, 0.5])
+                    h[0].caption("TALLA"); h[1].caption("EN TIZADO"); h[2].caption("TOTAL UNIDADES")
+
+                    for idx, item in enumerate(curva_a_mostrar):
+                        if isinstance(item, dict):
+                            fila = st.columns([2, 2, 2, 0.5])
+                            v_pzs = int(item.get('cantidad', 0))
+                            fila[0].write(f"**{item['talla']}**")
+                            fila[1].write(f"{v_pzs} pzs")
+                            fila[2].info(f"{n_capas * v_pzs} und.")
+                            if not st.session_state.bloquear and not ya_enviado:
+                                if fila[3].button("🗑️", key=f"del_curva_{idx}"):
+                                    st.session_state.curva_dinamica.pop(idx); st.rerun()
+                    st.metric("TOTAL REAL A CORTAR", f"{total_real} prendas")
+            else:
+                st.info("No hay tallas registradas.")
+                total_real = 0
+
+        # --- BOTONES DE ACCIÓN ---
+        st.divider()
+        b1, b2, b3 = st.columns(3)
+        with b1:
+            if st.button("💾 Guardar Todo", use_container_width=True, disabled=ya_enviado):
+                cod_id = st.session_state.codigo_actual if st.session_state.codigo_actual != "S/C" else f"M-{datetime.datetime.now().strftime('%y%m%d%H%M')}"
+                payload = {
+                    "codigo_muestra": cod_id,
+                    "categoria": val_cat, "estilo": val_est, "disenadora": val_dis, "prioridad": val_prior,
+                    "patronista_responsable": val_pat, "desc_prenda": val_desc,
+                    "curva_tallas": st.session_state.curva_dinamica,
+                    "insumos_detalle": st.session_state.insumos_temp,
+                    "cantidad_paquetes": total_real, "estado": "Borrador"
+                }
+                supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
+                st.session_state.codigo_actual = cod_id
+                st.session_state.bloquear = True
+                st.success("Guardado correctamente"); st.rerun()
+
+        with b2:
+            p_e = st.session_state.bloquear and st.session_state.codigo_actual != "S/C" and not ya_enviado
+            if st.button("🚀 Enviar a Patronaje", use_container_width=True, disabled=not p_e):
+                supabase.table("fichas_muestras").update({"estado": "Pendiente Patronaje", "fecha_envio_patronaje": datetime.datetime.now().isoformat()}).eq("codigo_muestra", st.session_state.codigo_actual).execute()
                 st.rerun()
 
-        st.divider()
-        
-        # BOTÓN DE GUARDADO CRÍTICO
-        if st.button("💾 GRABAR EN BASE DE DATOS", type="primary"):
-            # DEBUG: Ver qué se envía
-            st.write("Enviando a Supabase:", st.session_state.curva_mvp)
-            
-            try:
-                # El truco: Asegurar que curva_tallas sea una lista limpia
-                resultado = supabase.table("fichas_muestras").update({
-                    "curva_tallas": st.session_state.curva_mvp 
-                }).eq("codigo_muestra", st.session_state.codigo_mvp).execute()
-                
-                if resultado.data:
-                    st.success("✅ ¡Guardado exitoso! Verifica en tu panel de Supabase.")
-                else:
-                    st.error("❌ Supabase no devolvió confirmación de guardado.")
-            except Exception as e:
-                st.error(f"❌ Error técnico al guardar: {e}")
+        with b3:
+            if st.button("✏️ Editar", use_container_width=True, disabled=ya_enviado):
+                # Al editar, forzamos la carga de lo que hay en DB a la sesión
+                st.session_state.insumos_temp = datos_db.get('insumos_detalle', [])
+                st.session_state.curva_dinamica = datos_db.get('curva_tallas', [])
+                st.session_state.bloquear = False; st.rerun()
