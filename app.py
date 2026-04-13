@@ -43,7 +43,7 @@ def obtener_indice(lista, valor):
     except (ValueError, KeyError):
         return 0
 
-# --- 5. CARGA INICIAL (OPTIMIZADA) ---
+# --- 5. CARGA INICIAL ---
 if st.session_state.codigo_actual == "Cargando...":
     try:
         res = supabase.table("fichas_muestras").select("codigo_muestra").order("fecha_creacion", desc=True).limit(1).execute()
@@ -61,35 +61,29 @@ st.sidebar.title("🏢 ERP Pilar Jeans")
 modulo = st.sidebar.radio("Menú", ["👗 Diseño", "📦 Almacén"])
 
 if modulo == "👗 Diseño":
-    # CONSULTA MEJORADA: Buscador con reseteo de estados dinámico
     with st.expander("🔍 Buscador de Muestras", expanded=False):
         try:
             res_busqueda = supabase.table("fichas_muestras").select("codigo_muestra, estilo, estado, fecha_creacion").order("fecha_creacion", desc=True).limit(50).execute()
-            
             if res_busqueda.data:
                 opciones = ["Seleccionar..."] + [
                     f"{str(r['fecha_creacion'])[:10]} | {r['codigo_muestra']} | {r.get('estilo', 'S/E')} | [{str(r.get('estado', 'BORRADOR')).upper()}]" 
                     for r in res_busqueda.data
                 ]
-                
                 seleccion = st.selectbox("Buscar por código o estilo:", opciones, index=0)
-                
                 if seleccion != "Seleccionar...":
                     nuevo_cod = seleccion.split(" | ")[1]
-                    
                     if nuevo_cod != st.session_state.codigo_actual:
                         if st.button("🔓 Abrir Ficha Seleccionada", use_container_width=True):
                             st.session_state.codigo_actual = nuevo_cod
                             st.session_state.bloquear = True
                             st.session_state.confirmar_envio = False
-                            # Forzamos vaciado para que cargue lo de la DB
                             st.session_state.insumos_temp = [] 
                             st.session_state.curva_dinamica = []
                             st.session_state.form_id += 1 
                             st.rerun()
             else:
                 st.info("No hay registros disponibles.")
-        except Exception as e:
+        except:
             st.error("Error al conectar con el historial.")
 
     st.divider()
@@ -111,7 +105,6 @@ if modulo == "👗 Diseño":
             if res.data:
                 datos_db = res.data[0]
                 ya_enviado = datos_db.get('estado') == "Pendiente Patronaje"
-                # Sincronización de listas solo si están vacías (carga inicial del registro)
                 if not st.session_state.insumos_temp and datos_db.get('insumos_detalle'):
                     st.session_state.insumos_temp = datos_db.get('insumos_detalle')
                 if not st.session_state.curva_dinamica and datos_db.get('curva_tallas'):
@@ -185,41 +178,59 @@ if modulo == "👗 Diseño":
             with cs1: val_lav = st.text_input("Lavado", value=datos_db.get('color_lavado', ""), disabled=st.session_state.bloquear or ya_enviado)
             with cs2: val_art = st.text_input("Arte", value=datos_db.get('detalles_arte', ""), disabled=st.session_state.bloquear or ya_enviado)
 
+        # --- SECCIÓN 5: MEJORADA (VALIDACIÓN Y MENSAJES) ---
         with st.container(border=True):
             st.subheader("5. Tallas y Planificación de Corte")
+            
             if not st.session_state.bloquear and not ya_enviado:
                 c1, c2, c3 = st.columns([2, 2, 1])
                 t_ops = ["Seleccionar...", "26", "28", "30", "32", "34", "36", "S", "M", "L", "XL"]
-                t_sel = c1.selectbox("Talla", t_ops, key="selector_talla_v6")
-                r_val = c2.number_input("Piezas en Tizado", min_value=1, step=1, key="ratio_v6")
-                if c3.button("➕ Añadir"):
-                    if t_sel != "Seleccionar...":
+                t_sel = c1.selectbox("Seleccione Talla", t_ops, key="selector_talla_v6")
+                r_val = c2.number_input("Piezas en el Tizado (Ratio)", min_value=1, step=1, key="ratio_v6")
+                
+                if c3.button("➕ Añadir Talla", use_container_width=True):
+                    if t_sel == "Seleccionar...":
+                        st.error("Por favor, seleccione una talla válida.")
+                    else:
                         actuales = [item['talla'] for item in st.session_state.curva_dinamica]
-                        if t_sel not in actuales:
+                        if t_sel in actuales:
+                            st.error(f"La talla {t_sel} ya ha sido agregada. Edítela o elimínela para cambiarla.")
+                        else:
                             st.session_state.curva_dinamica.append({"talla": t_sel, "cantidad": r_val})
                             st.rerun()
 
             suma_tizado = sum(int(i.get('cantidad', 0)) for i in st.session_state.curva_dinamica)
+            
             if suma_tizado > 0:
                 st.divider()
+                st.info(f"Cada capa de tela contiene **{suma_tizado}** prendas según el tizado.")
+                
                 val_inicial = max(suma_tizado, int(datos_db.get('cantidad_paquetes', suma_tizado)))
-                cant_pedida = st.number_input("¿Prendas totales?", min_value=1, value=val_inicial, disabled=st.session_state.bloquear or ya_enviado)
+                cant_pedida = st.number_input("Cantidad total deseada de prendas:", min_value=1, value=val_inicial, disabled=st.session_state.bloquear or ya_enviado)
+                
+                # Lógica de cálculo de capas y ajuste
                 n_capas = (cant_pedida + suma_tizado - 1) // suma_tizado
                 total_real = n_capas * suma_tizado
                 
+                if total_real != cant_pedida:
+                    st.warning(f"⚠️ **Ajuste de Corte:** Para mantener el tizado de {suma_tizado} pzs, se cortarán **{n_capas} capas**, resultando en **{total_real}** prendas totales.")
+                
+                # Tabla de desglose
                 h = st.columns([2, 2, 2, 0.5])
-                h[0].caption("TALLA"); h[1].caption("EN TIZADO"); h[2].caption("TOTAL UNIDADES")
+                h[0].caption("TALLA"); h[1].caption("CANT. EN TIZADO"); h[2].caption("TOTAL A CORTAR")
+                
                 for idx, item in enumerate(st.session_state.curva_dinamica):
                     fila = st.columns([2, 2, 2, 0.5])
                     fila[0].write(f"**{item['talla']}**")
                     fila[1].write(f"{item['cantidad']} pzs")
-                    fila[2].info(f"{n_capas * int(item['cantidad'])} und.")
+                    fila[2].success(f"{n_capas * int(item['cantidad'])} unidades")
                     if not st.session_state.bloquear and not ya_enviado:
                         if fila[3].button("🗑️", key=f"del_v6_{idx}"):
                             st.session_state.curva_dinamica.pop(idx); st.rerun()
-                st.metric("TOTAL REAL A CORTAR", f"{total_real} prendas")
+                
+                st.metric("TOTAL FINAL DE LA ORDEN", f"{total_real} prendas")
             else:
-                st.info("Agregue tallas para planificar el corte.")
+                st.info("Agregue tallas para visualizar la planificación de corte.")
                 total_real = 0
 
         with st.container(border=True):
@@ -240,7 +251,7 @@ if modulo == "👗 Diseño":
                 supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
                 st.session_state.codigo_actual = cod_id
                 st.session_state.bloquear = True
-                st.success(f"Guardado: {cod_id}"); st.rerun()
+                st.success(f"Guardado exitosamente: {cod_id}"); st.rerun()
 
         with b2:
             p_e = st.session_state.bloquear and st.session_state.codigo_actual != "S/C" and not ya_enviado
