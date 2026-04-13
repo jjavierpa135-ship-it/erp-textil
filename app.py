@@ -173,39 +173,33 @@ if modulo == "👗 Diseño":
             with cs1: val_lav = st.text_input("Lavado", value=datos_db.get('color_lavado', ""), disabled=st.session_state.bloquear or ya_enviado)
             with cs2: val_art = st.text_input("Arte", value=datos_db.get('detalles_arte', ""), disabled=st.session_state.bloquear or ya_enviado)
 
-# --- 5. TALLAS Y PLANIFICACIÓN DE CORTE (MEJORADO Y BLINDADO) ---
+# --- 5. TALLAS Y PLANIFICACIÓN DE CORTE (BLOQUE FINAL) ---
         with st.container(border=True):
             col_t_tit, col_t_res = st.columns([3, 1])
             col_t_tit.subheader("5. Tallas y Planificación de Corte")
             
-            # Gestión de errores: Botón para limpiar si se equivocan
             if not st.session_state.bloquear and not ya_enviado:
                 if col_t_res.button("♻️ Reiniciar Tallas", use_container_width=True):
                     st.session_state.curva_dinamica = []
                     st.rerun()
 
-            # Aseguramos que la curva sea siempre una lista
             if st.session_state.curva_dinamica is None: 
                 st.session_state.curva_dinamica = []
 
-            # Cantidad total del pedido
             val_total_prendas = st.number_input("Cantidad total de prendas (Pedido)", min_value=1, 
                                               value=int(datos_db.get('cantidad_paquetes', 10)), 
                                               disabled=st.session_state.bloquear or ya_enviado)
-
             st.divider()
 
-            # Entrada de nuevas tallas
             if not st.session_state.bloquear and not ya_enviado:
                 st.markdown("**Agregar Proporción de Corte**")
                 c_add1, c_add2, c_add3 = st.columns([2, 2, 1])
                 tallas_disp = ["Seleccionar...", "26", "28", "30", "32", "34", "36", "S", "M", "L", "XL"]
-                nueva_t = c_add1.selectbox("Talla", tallas_disp, key="sel_t_new")
-                nueva_c = c_add2.number_input("Corte (Ratio)", min_value=1, step=1, key="num_c_new")
+                nueva_t = c_add1.selectbox("Talla", tallas_disp, key="sel_t_vinal")
+                nueva_c = c_add2.number_input("Corte (Ratio)", min_value=1, step=1, key="num_c_final")
                 
                 if c_add3.button("➕ Añadir"):
                     if nueva_t != "Seleccionar...":
-                        # VALIDACIÓN: No duplicados
                         existentes = [item['talla'] for item in st.session_state.curva_dinamica]
                         if nueva_t in existentes:
                             st.warning(f"La talla {nueva_t} ya está agregada.")
@@ -213,10 +207,8 @@ if modulo == "👗 Diseño":
                             st.session_state.curva_dinamica.append({"talla": nueva_t, "cantidad": nueva_c})
                             st.rerun()
 
-            # Visualización y cálculos automáticos
             if st.session_state.curva_dinamica:
                 suma_ratios = sum(int(i.get('cantidad', 0)) for i in st.session_state.curva_dinamica)
-                
                 h = st.columns([2, 2, 2, 0.5])
                 h[0].caption("TALLA"); h[1].caption("RATIO"); h[2].caption("TOTAL A CORTAR")
 
@@ -224,8 +216,6 @@ if modulo == "👗 Diseño":
                 for idx, t_item in enumerate(st.session_state.curva_dinamica):
                     r = st.columns([2, 2, 2, 0.5])
                     ratio = int(t_item.get('cantidad', 0))
-                    
-                    # Cálculo con redondeo a ENTERO para evitar errores de tipo
                     calculo = (val_total_prendas / suma_ratios) * ratio if suma_ratios > 0 else 0
                     u_redondeadas = int(round(calculo))
                     total_real += u_redondeadas
@@ -235,74 +225,57 @@ if modulo == "👗 Diseño":
                     r[2].info(f"{u_redondeadas} unidades")
                     
                     if not st.session_state.bloquear and not ya_enviado:
-                        if r[3].button("🗑️", key=f"btn_del_t_{idx}"):
+                        if r[3].button("🗑️", key=f"btn_final_del_{idx}"):
                             st.session_state.curva_dinamica.pop(idx)
                             st.rerun()
                 
                 st.divider()
                 st.metric("RESUMEN DE CORTE", f"{total_real} / {val_total_prendas} prendas")
-        
 
-# --- 6. FOTOS ---
-        
+        # --- 6. FOTOS ---
         with st.container(border=True):
             st.subheader("6. Fotos")
             st.file_uploader("Subir fotos", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'], disabled=st.session_state.bloquear or ya_enviado)
 
-
-st.divider()
-        # Definimos 3 columnas principales para los botones
+        st.divider()
+        # --- BOTONES DE ACCIÓN FINAL ---
         col_btn1, col_btn2, col_btn3 = st.columns(3)
 
         with col_btn1:
             if st.button("💾 Guardar Todo", use_container_width=True, disabled=ya_enviado):
-                # Creamos el payload aquí para evitar el error "payload is not defined"
                 payload = {
                     "codigo_muestra": st.session_state.codigo_actual if st.session_state.codigo_actual != "S/C" else f"M-{datetime.datetime.now().strftime('%y%m%d%H%M')}",
-                    "categoria": val_cat,
-                    "estilo": val_est,
-                    "disenadora": val_dis,
-                    "prioridad": val_prior,
-                    "patronista_responsable": val_pat,
-                    "observaciones_contra": val_obs_dis,
-                    "desc_prenda": val_desc,
-                    "tela_1": val_t1,
-                    "curva_tallas": st.session_state.curva_dinamica,
-                    "cantidad_paquetes": val_total_prendas,
-                    "estado": "Borrador"
+                    "categoria": val_cat, "estilo": val_est, "disenadora": val_dis, "prioridad": val_prior,
+                    "patronista_responsable": val_pat, "observaciones_contra": val_obs_dis, "desc_prenda": val_desc,
+                    "tela_1": val_t1, "curva_tallas": st.session_state.curva_dinamica,
+                    "cantidad_paquetes": val_total_prendas, "estado": "Borrador"
                 }
                 try:
                     supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
                     st.session_state.codigo_actual = payload["codigo_muestra"]
                     st.session_state.bloquear = True
-                    st.success("Guardado correctamente")
-                    st.rerun()
+                    st.success("Guardado"); st.rerun()
                 except Exception as e:
-                    st.error(f"Error al guardar: {e}")
+                    st.error(f"Error: {e}")
 
         with col_btn2:
-            # Lógica de envío simplificada y sin errores de columnas
-            puede_enviar = not (st.session_state.codigo_actual == "S/C") and st.session_state.bloquear and not ya_enviado
+            p_env = not (st.session_state.codigo_actual == "S/C") and st.session_state.bloquear and not ya_enviado
             if not st.session_state.confirmar_envio:
-                if st.button("🚀 Enviar a Patronaje", use_container_width=True, disabled=not puede_enviar):
-                    st.session_state.confirmar_envio = True
-                    st.rerun()
+                if st.button("🚀 Enviar a Patronaje", use_container_width=True, disabled=not p_env):
+                    st.session_state.confirmar_envio = True; st.rerun()
             else:
                 st.info("¿Confirmar envío?")
-                c_si, c_no = st.columns(2) # Usamos c_si y c_no para evitar conflictos
+                c_si, c_no = st.columns(2)
                 if c_si.button("✅ Sí", use_container_width=True):
-                    ahora = datetime.datetime.now().isoformat()
-                    supabase.table("fichas_muestras").update({"estado": "Pendiente Patronaje", "fecha_envio_patronaje": ahora}).eq("codigo_muestra", st.session_state.codigo_actual).execute()
-                    st.session_state.confirmar_envio = False
-                    st.rerun()
+                    supabase.table("fichas_muestras").update({"estado": "Pendiente Patronaje", "fecha_envio_patronaje": datetime.datetime.now().isoformat()}).eq("codigo_muestra", st.session_state.codigo_actual).execute()
+                    st.session_state.confirmar_envio = False; st.rerun()
                 if c_no.button("❌ No", use_container_width=True):
-                    st.session_state.confirmar_envio = False
-                    st.rerun()
+                    st.session_state.confirmar_envio = False; st.rerun()
 
         with col_btn3:
             if st.button("✏️ Editar", use_container_width=True, disabled=ya_enviado):
-                st.session_state.bloquear = False
-                st.rerun()
+                st.session_state.bloquear = False; st.rerun()
+    
 
     with tab2:
         st.subheader("📏 Módulo de Patronista")
