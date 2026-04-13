@@ -174,79 +174,69 @@ if modulo == "👗 Diseño":
             with cs2: val_art = st.text_input("Arte", value=datos_db.get('detalles_arte', ""), disabled=st.session_state.bloquear or ya_enviado)
 
 # --- 5. TALLAS Y PLANIFICACIÓN DE CORTE (MEJORADO) ---
-        with st.container(border=True):
-            col_head1, col_head2 = st.columns([3, 1])
-            col_head1.subheader("5. Tallas y Planificación de Corte")
-            
-            # Sugerencia de gestión: Botón para reiniciar solo las tallas si hay muchos errores
-            if not st.session_state.bloquear and not ya_enviado:
-                if col_head2.button("♻️ Reiniciar Tallas", help="Borra todas las tallas añadidas"):
-                    st.session_state.curva_dinamica = []
+with st.container(border=True):
+    c_h1, c_h2 = st.columns([3, 1])
+    c_h1.subheader("5. Tallas y Planificación de Corte")
+    
+    # Sugerencia de gestión: Botón para borrar todo si se equivocan mucho
+    if not st.session_state.bloquear and not ya_enviado:
+        if c_h2.button("♻️ Reiniciar Tallas", use_container_width=True):
+            st.session_state.curva_dinamica = []
+            st.rerun()
+
+    val_total_prendas = st.number_input("Cantidad total de prendas a hacer (Pedido)", min_value=1, 
+                                      value=int(datos_db.get('cantidad_paquetes', 10)), 
+                                      disabled=st.session_state.bloquear or ya_enviado)
+
+    st.divider()
+
+    if not st.session_state.bloquear and not ya_enviado:
+        st.markdown("**Configurar Proporción de Corte**")
+        col_add1, col_add2, col_add3 = st.columns([2, 2, 1])
+        lista_tallas_op = ["Seleccionar...", "26", "28", "30", "32", "34", "36", "S", "M", "L", "XL"]
+        nueva_t = col_add1.selectbox("Talla", lista_tallas_op, key="sel_talla_new")
+        nueva_c = col_add2.number_input("Corte (Ratio)", min_value=1, step=1, key="num_ratio_new")
+        
+        if col_add3.button("➕ Añadir"):
+            if nueva_t != "Seleccionar...":
+                # VALIDACIÓN: No permitir duplicados
+                tallas_existentes = [item['talla'] for item in st.session_state.curva_dinamica]
+                if nueva_t in tallas_existentes:
+                    st.warning(f"La talla {nueva_t} ya está en la lista.")
+                else:
+                    st.session_state.curva_dinamica.append({"talla": nueva_t, "cantidad": nueva_c})
                     st.rerun()
+
+    # Tabla de visualización y cálculos
+    if st.session_state.curva_dinamica:
+        suma_ratios = sum(int(item.get('cantidad', 0)) for item in st.session_state.curva_dinamica)
+        
+        # Encabezados de tabla
+        h = st.columns([2, 2, 2, 0.5])
+        h[0].caption("TALLA"); h[1].caption("CORTE (RATIO)"); h[2].caption("TOTAL UNIDADES")
+
+        total_verificado = 0
+        for idx, t_item in enumerate(st.session_state.curva_dinamica):
+            r = st.columns([2, 2, 2, 0.5])
+            ratio = int(t_item.get('cantidad', 0))
             
-            # Seguridad de nulos
-            if st.session_state.curva_dinamica is None: st.session_state.curva_dinamica = []
-
-            val_total_prendas = st.number_input("Cantidad total de prendas a hacer (Pedido)", min_value=1, 
-                                              value=int(datos_db.get('cantidad_paquetes', 10)), 
-                                              disabled=st.session_state.bloquear or ya_enviado)
-
-            st.divider()
-
+            # CÁLCULO: Redondeo forzado a entero para evitar el error de la imagen
+            u_talla = (val_total_prendas / suma_ratios) * ratio if suma_ratios > 0 else 0
+            u_entero = int(round(u_talla)) 
+            total_verificado += u_entero
+            
+            r[0].write(f"**{t_item['talla']}**")
+            r[1].write(f"{ratio} partes")
+            r[2].info(f"{u_entero} und.")
+            
+            # Sugerencia: Eliminar para corregir
             if not st.session_state.bloquear and not ya_enviado:
-                st.markdown("**Configurar Proporción de Corte**")
-                col_add1, col_add2, col_add3 = st.columns([2, 2, 1])
-                lista_tallas_opciones = ["Seleccionar...", "26", "28", "30", "32", "34", "36", "S", "M", "L", "XL"]
-                nueva_t = col_add1.selectbox("Talla", lista_tallas_opciones, key="tmp_talla_select")
-                nueva_c = col_add2.number_input("Corte (Ratio/Proporción)", min_value=1, step=1, key="tmp_corte_input")
-                
-                if col_add3.button("➕ Añadir"):
-                    if nueva_t == "Seleccionar...":
-                        st.error("Elige una talla.")
-                    else:
-                        # VALIDACIÓN 1: No permitir duplicados
-                        tallas_existentes = [item['talla'] for item in st.session_state.curva_dinamica]
-                        if nueva_t in tallas_existentes:
-                            st.warning(f"La talla {nueva_t} ya está en la lista. Elíminala si deseas cambiar su valor.")
-                        else:
-                            st.session_state.curva_dinamica.append({"talla": nueva_t, "cantidad": nueva_c})
-                            st.rerun()
-
-            # Visualización de la tabla de cálculos
-            if st.session_state.curva_dinamica:
-                suma_cortes = sum(int(item.get('cantidad', 0)) for item in st.session_state.curva_dinamica)
-                
-                # Encabezados
-                h_t = st.columns([2, 2, 2, 0.5])
-                h_t[0].caption("TALLA")
-                h_t[1].caption("CORTE (RATIO)")
-                h_t[2].caption("TOTAL A CORTAR (UNIDADES)")
-
-                total_verif_entero = 0
-                for idx, t_item in enumerate(st.session_state.curva_dinamica):
-                    r_t = st.columns([2, 2, 2, 0.5])
-                    ratio = int(t_item.get('cantidad', 0))
-                    
-                    # VALIDACIÓN 2: Cálculo con redondeo a entero
-                    unidades_talla = (val_total_prendas / suma_cortes) * ratio if suma_cortes > 0 else 0
-                    unidades_redondeadas = int(round(unidades_talla))
-                    total_verif_entero += unidades_redondeadas
-                    
-                    r_t[0].write(f"**{t_item['talla']}**")
-                    r_t[1].write(f"{ratio} partes")
-                    r_t[2].info(f"{unidades_redondeadas} und.") # Mostrar solo el entero
-                    
-                    # Sugerencia: Eliminar para modificar
-                    if not st.session_state.bloquear and not ya_enviado:
-                        if r_t[3].button("🗑️", key=f"del_talla_{idx}", help="Eliminar esta talla"):
-                            st.session_state.curva_dinamica.pop(idx)
-                            st.rerun()
-                
-                st.divider()
-                # Mostrar comparación de total pedido vs total calculado por redondeo
-                st.metric("TOTAL CALCULADO (REDONDEADO)", f"{total_verif_entero} de {val_total_prendas} prendas")
-                if total_verif_entero != val_total_prendas:
-                    st.caption("⚠️ Nota: El total puede variar ligeramente debido al redondeo de unidades por talla.")
+                if r[3].button("🗑️", key=f"btn_del_{idx}"):
+                    st.session_state.curva_dinamica.pop(idx)
+                    st.rerun()
+        
+        st.divider()
+        st.metric("TOTAL CALCULADO (REDONDEADO)", f"{total_verificado} / {val_total_prendas} prendas")
 
 
 # --- 6. FOTOS ---
@@ -255,51 +245,41 @@ if modulo == "👗 Diseño":
             st.subheader("6. Fotos")
             st.file_uploader("Subir fotos", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'], disabled=st.session_state.bloquear or ya_enviado)
 
-        st.divider()
-        b1, b2, b3 = st.columns(3)
-        with b1:
-            if st.button("💾 Guardar Todo", use_container_width=True, disabled=ya_enviado):
-                if "Seleccionar..." in [val_cat, val_est, val_dis]:
-                    st.error("Faltan datos obligatorios.")
-                else:
-                    cod = st.session_state.codigo_actual
-                    if cod == "S/C":
-                        cod = f"{val_cat[:3].upper()}-{val_est[:3].upper()}-{datetime.datetime.now().strftime('%y%m%d%H%M')}"
-                    
-                    # PAYLOAD CORREGIDO
-                    datos_finales = {
-                        "codigo_muestra": cod, "categoria": val_cat, "estilo": val_est, "disenadora": val_dis,
-                        "prioridad": val_prior, "patronista_responsable": val_pat, "observaciones_contra": val_obs_dis,
-                        "desc_prenda": val_desc, "ref_entalle": val_entalle, "procesos_aux": val_proc,
-                        "rec_observaciones": val_rec, "obs_molde": val_obs_molde, "tela_1": val_t1, "tela_2": val_t2,
-                        "insumos_detalle": st.session_state.insumos_temp, "color_lavado": val_lav, "detalles_arte": val_art,
-                        "curva_tallas": st.session_state.curva_dinamica, "cantidad_paquetes": val_total_prendas, "estado": "Borrador"
-                    }
-                    try:
-                        supabase.table("fichas_muestras").upsert(datos_finales, on_conflict="codigo_muestra").execute()
-                        st.session_state.codigo_actual = cod
-                        st.session_state.bloquear = True
-                        st.success(f"Guardado: {cod}"); st.rerun()
-                    except Exception as e: st.error(f"Error al guardar: {e}")
+  st.divider()
+b1, b2, b3 = st.columns(3)
 
-        with b2:
-            puede_env = not es_nuevo and st.session_state.bloquear and not ya_enviado
-            if not st.session_state.confirmar_envio:
-                if st.button("🚀 Enviar a Patronaje", use_container_width=True, disabled=not puede_env):
-                    st.session_state.confirmar_envio = True; st.rerun()
-            else:
-                st.warning("¿Confirmar envío?")
-                col_si, col_no = st.columns(2)
-                if col_si.button("✅ Sí"):
-                    ahora = datetime.datetime.now().isoformat()
-                    supabase.table("fichas_muestras").update({"estado": "Pendiente Patronaje", "fecha_envio_patronaje": ahora}).eq("codigo_muestra", st.session_state.codigo_actual).execute()
-                    st.session_state.confirmar_envio = False; st.rerun()
-                if col_no.button("❌ No"): 
-                    st.session_state.confirmar_envio = False; st.rerun()
+with b1:
+    if st.button("💾 Guardar Todo", use_container_width=True, disabled=ya_enviado):
+        # ... (aquí va tu lógica de guardado en Supabase)
+        pass
 
-        with b3:
-            if st.button("✏️ Editar", use_container_width=True, disabled=ya_enviado):
-                st.session_state.bloquear = False; st.rerun()
+with b2:
+    puede_enviar = not es_nuevo and st.session_state.bloquear and not ya_enviado
+    if not st.session_state.confirmar_envio:
+        if st.button("🚀 Enviar a Patronaje", use_container_width=True, disabled=not puede_enviar):
+            st.session_state.confirmar_envio = True
+            st.rerun()
+    else:
+        st.warning("¿Confirmar envío?")
+        # CORRECCIÓN AQUÍ: Definimos las columnas 'si' y 'no' explícitamente
+        col_si, col_no = st.columns(2)
+        if col_si.button("✅ Sí", use_container_width=True):
+            # Lógica de envío a Supabase
+            ahora = datetime.datetime.now().isoformat()
+            supabase.table("fichas_muestras").update({
+                "estado": "Pendiente Patronaje", 
+                "fecha_envio_patronaje": ahora
+            }).eq("codigo_muestra", st.session_state.codigo_actual).execute()
+            st.session_state.confirmar_envio = False
+            st.rerun()
+        if col_no.button("❌ No", use_container_width=True):
+            st.session_state.confirmar_envio = False
+            st.rerun()
+
+with b3:
+    if st.button("✏️ Editar", use_container_width=True, disabled=ya_enviado):
+        st.session_state.bloquear = False
+        st.rerun()
 
     with tab2:
         st.subheader("📏 Módulo de Patronista")
