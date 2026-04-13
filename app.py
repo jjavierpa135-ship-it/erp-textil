@@ -107,8 +107,20 @@ if modulo == "👗 Diseño":
             if res.data:
                 datos_db = res.data[0]
                 ya_enviado = datos_db.get('estado') == "Pendiente Patronaje"
-                if not st.session_state.insumos_temp and datos_db.get('insumos_detalle'):
-                    st.session_state.insumos_temp = datos_db.get('insumos_detalle')
+                
+               # Sincronización segura de insumos
+                if not st.session_state.insumos_temp:
+                    detalle_db = datos_db.get('insumos_detalle')
+                    if isinstance(detalle_db, list):
+                        st.session_state.insumos_temp = detalle_db
+                    elif isinstance(detalle_db, str) and detalle_db.strip():
+                        # Por si Supabase lo devuelve como texto plano
+                        import json
+                        try: st.session_state.insumos_temp = json.loads(detalle_db)
+                        except: st.session_state.insumos_temp = []
+
+
+                
                 if not st.session_state.curva_dinamica and datos_db.get('curva_tallas'):
                     st.session_state.curva_dinamica = datos_db.get('curva_tallas')
 
