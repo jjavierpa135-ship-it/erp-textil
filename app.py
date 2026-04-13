@@ -233,14 +233,24 @@ if modulo == "👗 Diseño":
                 total_general_prendas = 0
                 for idx, t_item in enumerate(st.session_state.curva_dinamica):
                     r_t = st.columns([2, 2, 2, 0.5])
-                    t_final = t_item['cantidad'] * val_paq
+                    
+                    # --- CORRECCIÓN AQUÍ: Validamos que sean números ---
+                    cant_unid = t_item.get('cantidad', 0)
+                    # Si por alguna razón cant_unid o val_paq son None, usamos 0
+                    cant_unid = int(cant_unid) if cant_unid else 0
+                    n_paquetes = int(val_paq) if val_paq else 0
+                    
+                    t_final = cant_unid * n_paquetes
                     total_general_prendas += t_final
+                    
                     r_t[0].write(f"**{t_item['talla']}**")
-                    r_t[1].write(f"{t_item['cantidad']} und.")
+                    r_t[1].write(f"{cant_unid} und.")
                     r_t[2].info(f"{t_final} unidades")
+                    
                     if not st.session_state.bloquear and not ya_enviado:
                         if r_t[3].button("🗑️", key=f"del_talla_{idx}"):
-                            st.session_state.curva_dinamica.pop(idx); st.rerun()
+                            st.session_state.curva_dinamica.pop(idx)
+                            st.rerun()
                 
                 st.divider()
                 st.metric("TOTAL PRENDAS EN ESTA FICHA", f"{total_general_prendas} Unidades")
