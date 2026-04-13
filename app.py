@@ -174,7 +174,7 @@ if modulo == "👗 Diseño":
             with cs2: val_art = st.text_input("Arte", value=datos_db.get('detalles_arte', ""), disabled=st.session_state.bloquear or ya_enviado)
 
 
-# --- SECCIÓN 5: TALLAS Y PLANIFICACIÓN (LÓGICA DE TIZADO CON AVISO) ---
+# --- SECCIÓN 5: TALLAS Y PLANIFICACIÓN (ORDEN LÓGICO MEJORADO) ---
         with st.container(border=True):
             col_t_tit, col_t_res = st.columns([3, 1])
             col_t_tit.subheader("5. Tallas y Planificación de Corte")
@@ -184,67 +184,66 @@ if modulo == "👗 Diseño":
                     st.session_state.curva_dinamica = []
                     st.rerun()
 
-            # Cantidad que el usuario ingresa inicialmente
-            cant_deseada = st.number_input("Cantidad deseada (Pedido)", min_value=1, 
-                                          value=int(datos_db.get('cantidad_paquetes', 7)), 
-                                          disabled=st.session_state.bloquear or ya_enviado)
-            st.divider()
+            if 'curva_dinamica' not in st.session_state or st.session_state.curva_dinamica is None:
+                st.session_state.curva_dinamica = []
 
+            # --- PASO A: CONFIGURAR EL TIZADO PRIMERO ---
             if not st.session_state.bloquear and not ya_enviado:
-                st.markdown("**Configurar Tizado (Proporción)**")
+                st.markdown("**1. Armar el Tizado (Proporción por capa)**")
                 c1, c2, c3 = st.columns([2, 2, 1])
                 t_opciones = ["Seleccionar...", "26", "28", "30", "32", "34", "36", "S", "M", "L", "XL"]
-                t_sel = c1.selectbox("Talla", t_opciones, key="t_tizado_final")
-                r_val = c2.number_input("Piezas en Tizado (Ratio)", min_value=1, step=1, key="r_tizado_final")
+                t_sel = c1.selectbox("Talla", t_opciones, key="t_v4")
+                r_val = c2.number_input("Piezas en Tizado", min_value=1, step=1, key="r_v4")
                 
-                if c3.button("➕ Añadir"):
+                if c3.button("➕ Añadir Talla"):
                     if t_sel != "Seleccionar...":
-                        lista_actual = [item['talla'] for item in st.session_state.curva_dinamica]
-                        if t_sel in lista_actual:
-                            st.warning(f"La talla {t_sel} ya está en el tizado.")
+                        actuales = [item['talla'] for item in st.session_state.curva_dinamica if isinstance(item, dict)]
+                        if t_sel in actuales:
+                            st.warning(f"La talla {t_sel} ya está en la lista.")
                         else:
                             st.session_state.curva_dinamica.append({"talla": t_sel, "cantidad": r_val})
                             st.rerun()
 
+            # --- PASO B: MOSTRAR TABLA Y LUEGO PEDIR CANTIDAD ---
             if st.session_state.curva_dinamica:
-                suma_ratios = sum(int(i['cantidad']) for i in st.session_state.curva_dinamica)
+                suma_tizado = sum(int(i.get('cantidad', 0)) for i in st.session_state.curva_dinamica)
                 
-                # Cálculo de capas y ajuste
-                n_paquetes = (cant_deseada + suma_ratios - 1) // suma_ratios
-                cant_real_final = n_paquetes * suma_ratios
+                st.divider()
+                st.markdown(f"**2. Definir Cantidad del Pedido** (Tizado actual: {suma_tizado} prendas por capa)")
                 
-                # MENSAJE DINÁMICO DE AJUSTE
-                if cant_real_final != cant_deseada:
-                    st.warning(f"""
-                    ⚠️ **Ajuste de producción:** La cantidad cambió de **{cant_deseada}** a **{cant_real_final}** para coincidir con el tizado ({suma_ratios} prendas por capa).
-                    
-                    **¿Qué desea hacer?**
-                    * Puede dejarlo así (se cortarán {n_paquetes} capas).
-                    * Puede cambiar la **Cantidad Deseada** a un múltiplo de {suma_ratios}.
-                    * Puede ajustar el **Corte (Ratio)** de las tallas.
-                    """)
-                else:
-                    st.success(f"✅ La cantidad coincide perfectamente con el tizado ({n_paquetes} capas exactas).")
+                # Aquí el usuario pone cuánto quiere sabiendo ya cuánto suma su tizado
+                cant_pedida = st.number_input("¿Cuántas prendas desea en total?", min_value=1, 
+                                              value=max(suma_tizado, int(datos_db.get('cantidad_paquetes', suma_tizado))), 
+                                              disabled=st.session_state.bloquear or ya_enviado)
 
-                # Tabla de distribución
+                # Cálculo de capas
+                n_capas = (cant_pedida + suma_tizado - 1) // suma_tizado
+                cant_final_ajustada = n_capas * suma_tizado
+                
+                if cant_final_ajustada != cant_pedida:
+                    st.warning(f"⚠️ Ajuste automático: Se cortarán **{n_capas} capas** ({cant_final_ajustada} prendas) para respetar el tizado.")
+
+                # Tabla de resultados
                 h = st.columns([2, 2, 2, 0.5])
-                h[0].caption("TALLA"); h[1].caption("EN TIZADO"); h[2].caption("TOTAL A CORTAR")
+                h[0].caption("TALLA"); h[1].caption("EN TIZADO"); h[2].caption("TOTAL UNIDADES")
 
                 for idx, item in enumerate(st.session_state.curva_dinamica):
+                    if not isinstance(item, dict): continue
                     fila = st.columns([2, 2, 2, 0.5])
-                    v_ratio = int(item['cantidad'])
-                    total_talla = n_paquetes * v_ratio
+                    v_pzs = int(item.get('cantidad', 0))
                     
                     fila[0].write(f"**{item['talla']}**")
-                    fila[1].write(f"{v_ratio} piezas")
-                    fila[2].info(f"{total_talla} unidades")
+                    fila[1].write(f"{v_pzs} pzs")
+                    fila[2].info(f"{n_capas * v_pzs} und.")
                     
                     if not st.session_state.bloquear and not ya_enviado:
-                        if fila[3].button("🗑️", key=f"del_tiz_final_{idx}"):
+                        if fila[3].button("🗑️", key=f"del_v4_{idx}"):
                             st.session_state.curva_dinamica.pop(idx); st.rerun()
                 
                 st.divider()
-                st.metric("TOTAL REAL A PRODUCIR", f"{cant_real_final} prendas")
+                st.metric("TOTAL REAL A CORTAR", f"{cant_final_ajustada} prendas")
+            else:
+                st.info("Comience agregando tallas para configurar el tizado.")
                 
 
         # --- SECCIÓN 6: FOTOS ---
