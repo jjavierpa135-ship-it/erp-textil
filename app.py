@@ -83,9 +83,11 @@ if modulo == "👗 Diseño":
                             st.rerun()
             else:
                 st.info("No hay registros disponibles.")
-        except:
-            st.error("Error al conectar con el historial.")
-
+        except Exception as e:
+            # Si el error es solo por el refresco de pantalla, no mostrar nada
+            if "RerunData" not in str(type(e)):
+                st.error(f"Error de conexión: {e}")
+                
     st.divider()
 
     col_t, col_c, col_b = st.columns([2, 1, 1])
