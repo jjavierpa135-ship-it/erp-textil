@@ -71,7 +71,7 @@ if modulo == "👗 Diseño":
                     st.session_state.bloquear = True
                     st.session_state.confirmar_envio = False
                     st.session_state.insumos_temp = [] 
-                    st.session_state.curva_dinamica = [] 
+                    st.session_state.curva_dinamica = [] # Limpiar para forzar recarga
                     st.rerun()
         except: st.warning("No se pudo cargar el historial.")
 
@@ -94,10 +94,12 @@ if modulo == "👗 Diseño":
             if res.data:
                 datos_db = res.data[0]
                 ya_enviado = datos_db.get('estado') == "Pendiente Patronaje"
+                
+                # Sincronización de Insumos
                 if not st.session_state.insumos_temp and datos_db.get('insumos_detalle'):
                     st.session_state.insumos_temp = datos_db.get('insumos_detalle')
                 
-                # CORRECCIÓN DE CARGA: Asegurar que los datos de la curva se asignen a la sesión
+                # Sincronización de Curva (Solo si la sesión está vacía o es una consulta nueva)
                 db_curva = datos_db.get('curva_tallas', [])
                 if not st.session_state.curva_dinamica and db_curva:
                     st.session_state.curva_dinamica = db_curva if isinstance(db_curva, list) else []
@@ -145,15 +147,7 @@ if modulo == "👗 Diseño":
             with ci1: val_t1 = st.selectbox("Tela Principal", telas_lista, index=obtener_indice(telas_lista, datos_db.get('tela_1')), disabled=st.session_state.bloquear or ya_enviado)
             with ci2: val_t2 = st.selectbox("Tela Complemento", telas_lista, index=obtener_indice(telas_lista, datos_db.get('tela_2')), disabled=st.session_state.bloquear or ya_enviado)
             
-            try:
-                res_mats = supabase.table("almacen_insumos").select("nombre, precio_unitario").execute()
-                opciones_mats = [m['nombre'] for m in res_mats.data] if res_mats.data else []
-                precios_mats = {m['nombre']: m['precio_unitario'] for m in res_mats.data} if res_mats.data else {}
-            except: opciones_mats, precios_mats = [], {}
-
-            total_insumos = 0.0
-            for item in st.session_state.insumos_temp:
-                total_insumos += item.get('cantidad', 0) * item.get('precio', 0.0)
+            total_insumos = sum(item.get('cantidad', 0) * item.get('precio', 0.0) for item in st.session_state.insumos_temp)
             st.metric("COSTO TOTAL INSUMOS", f"${total_insumos:.2f}")
 
         with st.container(border=True):
@@ -162,19 +156,14 @@ if modulo == "👗 Diseño":
             with cs1: val_lav = st.text_input("Lavado", value=datos_db.get('color_lavado', ""), disabled=st.session_state.bloquear or ya_enviado)
             with cs2: val_art = st.text_input("Arte", value=datos_db.get('detalles_arte', ""), disabled=st.session_state.bloquear or ya_enviado)
 
-        # --- SECCIÓN 5: TALLAS (CORRECCIÓN DEFINITIVA DE ERRORES) ---
+        # --- SECCIÓN 5: TALLAS (MODO CONSULTA CORREGIDO) ---
         with st.container(border=True):
-            col_t_tit, col_t_res = st.columns([3, 1])
-            col_t_tit.subheader("5. Tallas y Planificación de Corte")
+            st.subheader("5. Tallas y Planificación de Corte")
             
-            # Garantizar que curva siempre sea una lista válida
-            curva = st.session_state.curva_dinamica if isinstance(st.session_state.curva_dinamica, list) else []
-
+            # Usar directamente los datos de DB si la sesión está vacía (para visualización inmediata)
+            curva_a_mostrar = st.session_state.curva_dinamica if st.session_state.curva_dinamica else datos_db.get('curva_tallas', [])
+            
             if not st.session_state.bloquear and not ya_enviado:
-                if col_t_res.button("♻️ Reiniciar Tallas", use_container_width=True):
-                    st.session_state.curva_dinamica = []
-                    st.rerun()
-                
                 st.markdown("**1. Armar el Tizado**")
                 c1, c2, c3 = st.columns([2, 2, 1])
                 t_ops = ["Seleccionar...", "26", "28", "30", "32", "34", "36", "S", "M", "L", "XL"]
@@ -182,41 +171,42 @@ if modulo == "👗 Diseño":
                 r_val = c2.number_input("Piezas en Tizado", min_value=1, step=1, key="ratio_v6")
                 if c3.button("➕ Añadir"):
                     if t_sel != "Seleccionar...":
-                        actuales = [item['talla'] for item in curva if isinstance(item, dict)]
+                        actuales = [item['talla'] for item in st.session_state.curva_dinamica if isinstance(item, dict)]
                         if t_sel not in actuales:
                             st.session_state.curva_dinamica.append({"talla": t_sel, "cantidad": r_val})
                             st.rerun()
 
-            # Cálculo blindado contra tipos de datos incorrectos (Corrige AttributeError y ZeroDivisionError)
-            suma_tizado = sum(int(item.get('cantidad', 0)) for item in curva if isinstance(item, dict))
-            
-            if suma_tizado > 0:
+            # Cálculo y Visualización
+            if curva_a_mostrar and isinstance(curva_a_mostrar, list):
                 st.divider()
-                val_db_cant = datos_db.get('cantidad_paquetes', suma_tizado)
-                cant_pedida = st.number_input("Cantidad Total Pedida", min_value=1, value=int(val_db_cant), disabled=st.session_state.bloquear or ya_enviado)
+                suma_tizado = sum(int(item.get('cantidad', 0)) for item in curva_a_mostrar if isinstance(item, dict))
                 
-                n_capas = (cant_pedida + suma_tizado - 1) // suma_tizado
-                total_real = n_capas * suma_tizado
-                
-                if total_real != cant_pedida:
-                    st.warning(f"Ajuste: {n_capas} capas ({total_real} prendas total).")
+                if suma_tizado > 0:
+                    val_db_cant = datos_db.get('cantidad_paquetes', suma_tizado)
+                    cant_pedida = st.number_input("Cantidad Total Pedida", min_value=1, value=int(val_db_cant), disabled=st.session_state.bloquear or ya_enviado)
+                    
+                    n_capas = (cant_pedida + suma_tizado - 1) // suma_tizado
+                    total_real = n_capas * suma_tizado
+                    
+                    if total_real != cant_pedida:
+                        st.warning(f"Ajuste automático a capas completas: {total_real} prendas.")
 
-                h = st.columns([2, 2, 2, 0.5])
-                h[0].caption("TALLA"); h[1].caption("EN TIZADO"); h[2].caption("UNIDADES")
+                    h = st.columns([2, 2, 2, 0.5])
+                    h[0].caption("TALLA"); h[1].caption("EN TIZADO"); h[2].caption("TOTAL UNIDADES")
 
-                for idx, item in enumerate(curva):
-                    if isinstance(item, dict):
-                        fila = st.columns([2, 2, 2, 0.5])
-                        v_pzs = int(item.get('cantidad', 0))
-                        fila[0].write(f"**{item['talla']}**")
-                        fila[1].write(f"{v_pzs} pzs")
-                        fila[2].info(f"{n_capas * v_pzs} und.")
-                        if not st.session_state.bloquear and not ya_enviado:
-                            if fila[3].button("🗑️", key=f"del_v6_{idx}"):
-                                st.session_state.curva_dinamica.pop(idx); st.rerun()
-                st.metric("TOTAL REAL A CORTAR", f"{total_real} prendas")
+                    for idx, item in enumerate(curva_a_mostrar):
+                        if isinstance(item, dict):
+                            fila = st.columns([2, 2, 2, 0.5])
+                            v_pzs = int(item.get('cantidad', 0))
+                            fila[0].write(f"**{item['talla']}**")
+                            fila[1].write(f"{v_pzs} pzs")
+                            fila[2].info(f"{n_capas * v_pzs} und.")
+                            if not st.session_state.bloquear and not ya_enviado:
+                                if fila[3].button("🗑️", key=f"del_v6_{idx}"):
+                                    st.session_state.curva_dinamica.pop(idx); st.rerun()
+                    st.metric("TOTAL REAL A CORTAR", f"{total_real} prendas")
             else:
-                st.info("Agregue tallas o consulte una muestra con datos registrados.")
+                st.info("Sin tallas registradas en esta muestra.")
                 total_real = 0
 
         # --- 6. FOTOS Y BOTONES ---
