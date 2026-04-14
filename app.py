@@ -108,6 +108,7 @@ if modulo == "👗 Diseño":
                 datos_db = res.data[0]
                 ya_enviado = datos_db.get('estado') == "Pendiente Patronaje"
                 
+                # CARGA DE INSUMOS (Corregido para usar la columna correcta: insumos_detalle)
                 if not st.session_state.insumos_temp:
                     detalle_db = datos_db.get('insumos_detalle')
                     if isinstance(detalle_db, list):
@@ -116,6 +117,7 @@ if modulo == "👗 Diseño":
                         try: st.session_state.insumos_temp = json.loads(detalle_db)
                         except: st.session_state.insumos_temp = []
 
+                # CARGA DE TALLAS
                 if not st.session_state.curva_dinamica:
                     curva_db = datos_db.get('curva_tallas')
                     if isinstance(curva_db, list):
@@ -157,63 +159,34 @@ if modulo == "👗 Diseño":
                 val_rec = st.text_area("Recomendaciones y Observaciones", value=datos_db.get('rec_observaciones', ""), disabled=st.session_state.bloquear or ya_enviado, height=100)
             val_obs_molde = st.text_input("Observaciones de Molde", value=datos_db.get('obs_molde', ""), disabled=st.session_state.bloquear or ya_enviado)
 
-        # --- SECCIÓN 3: TELAS E INSUMOS (ACTUALIZADA) ---
         with st.container(border=True):
             st.subheader("3. Telas e Insumos")
+            telas_lista = ["Seleccionar...", "Denim 12oz", "Denim 10oz", "Gabardina", "Jersey", "Tocuyo"]
+            ci1, ci2 = st.columns(2)
+            with ci1: val_t1 = st.selectbox("Tela Principal", telas_lista, index=obtener_indice(telas_lista, datos_db.get('tela_1')), disabled=st.session_state.bloquear or ya_enviado)
+            with ci2: val_t2 = st.selectbox("Tela Complemento", telas_lista, index=obtener_indice(telas_lista, datos_db.get('tela_2')), disabled=st.session_state.bloquear or ya_enviado)
             
-            # Carga de telas desde el Maestro de Telas
-            try:
-                res_telas = supabase.table("maestro_telas").select("nombre_interno, precio_reposicion_usd").execute()
-                dict_telas = {t['nombre_interno']: float(t['precio_reposicion_usd']) for t in res_telas.data} if res_telas.data else {}
-                opciones_telas = ["Seleccionar..."] + list(dict_telas.keys())
-            except:
-                opciones_telas = ["Seleccionar...", "Error al cargar"]
-                dict_telas = {}
-
-            # Bloque de Tela Principal
-            st.write("**Tela Principal (Cuerpo)**")
-            ctp1, ctp2, ctp3 = st.columns([2, 1, 1])
-            val_t1 = ctp1.selectbox("Seleccionar Tela", opciones_telas, index=obtener_indice(opciones_telas, datos_db.get('tela_1')), key="t1_sel", disabled=st.session_state.bloquear or ya_enviado)
-            cant_t1 = ctp2.number_input("Consumo (m)", min_value=0.0, value=float(datos_db.get('consumo_t1', 1.20)), key="t1_cant", disabled=st.session_state.bloquear or ya_enviado)
-            costo_t1 = dict_telas.get(val_t1, 0.0) * cant_t1
-            ctp3.metric("Subtotal Tela", f"${costo_t1:.2f}")
-
-            # Bloque de Tela Secundaria
-            st.write("**Tela Complemento (Forros/Combinación)**")
-            cts1, cts2, cts3 = st.columns([2, 1, 1])
-            val_t2 = cts1.selectbox("Seleccionar Tela Secund.", opciones_telas, index=obtener_indice(opciones_telas, datos_db.get('tela_2')), key="t2_sel", disabled=st.session_state.bloquear or ya_enviado)
-            cant_t2 = cts2.number_input("Consumo Sec. (m)", min_value=0.0, value=float(datos_db.get('consumo_t2', 0.0)), key="t2_cant", disabled=st.session_state.bloquear or ya_enviado)
-            costo_t2 = dict_telas.get(val_t2, 0.0) * cant_t2
-            cts3.metric("Subtotal Sec.", f"${costo_t2:.2f}")
-
-            st.divider()
-
-            # Gestión de Insumos
             try:
                 res_mats = supabase.table("almacen_insumos").select("nombre, precio_unitario").execute()
                 opciones_mats = [m['nombre'] for m in res_mats.data] if res_mats.data else []
-                precios_mats = {m['nombre']: float(m['precio_unitario']) for m in res_mats.data} if res_mats.data else {}
+                precios_mats = {m['nombre']: m['precio_unitario'] for m in res_mats.data} if res_mats.data else {}
             except: opciones_mats, precios_mats = [], {}
 
+            # TABLA DE INSUMOS CARGADOS
             if st.session_state.insumos_temp:
                 st.write("**Detalle de Insumos:**")
                 for idx, item in enumerate(st.session_state.insumos_temp):
                     icol1, icol2, icol3, icol4 = st.columns([3, 1, 1, 0.5])
                     icol1.write(f"🔹 {item.get('codigo')}")
                     icol2.write(f"{item.get('cantidad')} unid.")
-                    icol3.write(f"${float(item.get('precio', 0.0)):.2f}")
+                    icol3.write(f"${item.get('precio', 0.0):.2f}")
                     if not st.session_state.bloquear and not ya_enviado:
                         if icol4.button("🗑️", key=f"del_ins_{idx}"):
-                            st.session_state.insumos_temp.pop(idx); st.rerun()
+                            st.session_state.insumos_temp.pop(idx)
+                            st.rerun()
 
             total_insumos = sum(float(item.get('cantidad', 0)) * float(item.get('precio', 0.0)) for item in st.session_state.insumos_temp)
-            
-            # CÁLCULO TOTAL DE MATERIALES
-            costo_materiales = costo_t1 + costo_t2 + total_insumos
-            
-            m1, m2 = st.columns(2)
-            m1.metric("COSTO TOTAL INSUMOS", f"${total_insumos:.2f}")
-            m2.subheader(f"💰 COSTO TOTAL MATERIALES: ${costo_materiales:.2f}")
+            st.metric("COSTO TOTAL INSUMOS", f"${total_insumos:.2f}")
 
             if not st.session_state.bloquear and not ya_enviado:
                 with st.expander("➕ Añadir Material de Almacén"):
@@ -238,6 +211,7 @@ if modulo == "👗 Diseño":
                 t_ops = ["Seleccionar...", "26", "28", "30", "32", "34", "36", "S", "M", "L", "XL"]
                 t_sel = c1.selectbox("Seleccione Talla", t_ops, key="selector_talla_v6")
                 r_val = c2.number_input("Piezas en el Tizado (Ratio)", min_value=1, step=1, key="ratio_v6")
+                
                 if c3.button("➕ Añadir Talla", use_container_width=True):
                     if t_sel != "Seleccionar...":
                         actuales = [item['talla'] for item in st.session_state.curva_dinamica]
@@ -282,8 +256,8 @@ if modulo == "👗 Diseño":
                 payload = {
                     "codigo_muestra": cod_id, "categoria": val_cat, "estilo": val_est, "disenadora": val_dis, 
                     "prioridad": val_prior, "patronista_responsable": val_pat, "observaciones_contra": val_obs_dis, 
-                    "desc_prenda": val_desc, "tela_1": val_t1, "consumo_t1": cant_t1, "tela_2": val_t2, "consumo_t2": cant_t2,
-                    "curva_tallas": st.session_state.curva_dinamica, "insumos_detalle": st.session_state.insumos_temp, 
+                    "desc_prenda": val_desc, "tela_1": val_t1, "curva_tallas": st.session_state.curva_dinamica,
+                    "insumos_detalle": st.session_state.insumos_temp, 
                     "cantidad_paquetes": total_real, "estado": "Borrador"
                 }
                 supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
