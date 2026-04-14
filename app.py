@@ -258,7 +258,7 @@ if modulo == "👗 Diseño":
                     "codigo_muestra": cod_id, "categoria": val_cat, "estilo": val_est, "disenadora": val_dis, 
                     "prioridad": val_prior, "patronista_responsable": val_pat, "observaciones_contra": val_obs_dis, 
                     "desc_prenda": val_desc, "tela_1": val_t1, "curva_tallas": st.session_state.curva_dinamica,
-                    "detalles de entrada": st.session_state.insumos_temp, # <- NOMBRE COLUMNA DB CORREGIDO
+                    "insumos_detalle": st.session_state.insumos_temp, # <- NOMBRE COLUMNA DB CORREGIDO
                     "cantidad_paquetes": total_real, "estado": "Borrador"
                 }
                 supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
