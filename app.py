@@ -1,6 +1,7 @@
 import streamlit as st
 from supabase import create_client, Client
 import datetime
+import json
 
 # --- 1. CONFIGURACIÓN ---
 st.set_page_config(page_title="ERP Pilar Jeans", page_icon="👗", layout="wide")
@@ -84,7 +85,6 @@ if modulo == "👗 Diseño":
             else:
                 st.info("No hay registros disponibles.")
         except Exception as e:
-            # Silenciamos el error visual durante el rerun de Streamlit
             if "RerunData" not in str(type(e)):
                 st.error(f"Error al conectar con el historial: {e}")
                 
@@ -108,13 +108,12 @@ if modulo == "👗 Diseño":
                 datos_db = res.data[0]
                 ya_enviado = datos_db.get('estado') == "Pendiente Patronaje"
                 
-                # CARGA DE INSUMOS (Usando el nombre real de tu base de datos: 'detalles de entrada')
+                # CARGA DE INSUMOS (Corregido para usar la columna correcta: insumos_detalle)
                 if not st.session_state.insumos_temp:
-                    detalle_db = datos_db.get('detalles de entrada') # <- Nombre corregido
+                    detalle_db = datos_db.get('insumos_detalle')
                     if isinstance(detalle_db, list):
                         st.session_state.insumos_temp = detalle_db
                     elif isinstance(detalle_db, str) and detalle_db.strip():
-                        import json
                         try: st.session_state.insumos_temp = json.loads(detalle_db)
                         except: st.session_state.insumos_temp = []
 
@@ -258,7 +257,7 @@ if modulo == "👗 Diseño":
                     "codigo_muestra": cod_id, "categoria": val_cat, "estilo": val_est, "disenadora": val_dis, 
                     "prioridad": val_prior, "patronista_responsable": val_pat, "observaciones_contra": val_obs_dis, 
                     "desc_prenda": val_desc, "tela_1": val_t1, "curva_tallas": st.session_state.curva_dinamica,
-                    "insumos_detalle": st.session_state.insumos_temp, # <- NOMBRE COLUMNA DB CORREGIDO
+                    "insumos_detalle": st.session_state.insumos_temp, 
                     "cantidad_paquetes": total_real, "estado": "Borrador"
                 }
                 supabase.table("fichas_muestras").upsert(payload, on_conflict="codigo_muestra").execute()
