@@ -23,7 +23,7 @@ if 'confirmar_envio' not in st.session_state:
     st.session_state.confirmar_envio = False
 if 'insumos_temp' not in st.session_state:
     st.session_state.insumos_temp = []
-if 'telas_temp' not in st.session_state: # NUEVO: Estado para telas dinámicas
+if 'telas_temp' not in st.session_state: 
     st.session_state.telas_temp = []
 if 'curva_dinamica' not in st.session_state:
     st.session_state.curva_dinamica = []
@@ -34,7 +34,7 @@ def limpiar_pantalla_total():
     st.session_state.bloquear = False
     st.session_state.confirmar_envio = False
     st.session_state.insumos_temp = []
-    st.session_state.telas_temp = [] # Limpiar telas
+    st.session_state.telas_temp = [] 
     st.session_state.curva_dinamica = []
     st.session_state.form_id += 1 
     for key in list(st.session_state.keys()):
@@ -82,7 +82,7 @@ if modulo == "👗 Diseño":
                             st.session_state.bloquear = True
                             st.session_state.confirmar_envio = False
                             st.session_state.insumos_temp = [] 
-                            st.session_state.telas_temp = [] # Reset al cargar
+                            st.session_state.telas_temp = [] 
                             st.session_state.curva_dinamica = []
                             st.session_state.form_id += 1 
                             st.rerun()
@@ -108,18 +108,17 @@ if modulo == "👗 Diseño":
                 datos_db = res.data[0]
                 ya_enviado = datos_db.get('estado') == "Pendiente Patronaje"
                 
-                # CARGA DE INSUMOS
+                # CARGA DE INSUMOS (Columna: insumos_detalle)
                 if not st.session_state.insumos_temp:
-                    st.session_state.insumos_temp = datos_db.get('insumos_detalle', [])
+                    st.session_state.insumos_temp = datos_db.get('insumos_detalle') if datos_db.get('insumos_detalle') else []
 
-                # CARGA DE TELAS (Dinamizada)
+                # CARGA DE TELAS (Columna: telas_detalle)
                 if not st.session_state.telas_temp:
-                    # Cargamos el JSON de telas de la nueva columna 'telas_detalle'
-                    st.session_state.telas_temp = datos_db.get('telas_detalle', [])
+                    st.session_state.telas_temp = datos_db.get('telas_detalle') if datos_db.get('telas_detalle') else []
 
                 # CARGA DE TALLAS
                 if not st.session_state.curva_dinamica:
-                    st.session_state.curva_dinamica = datos_db.get('curva_tallas', [])
+                    st.session_state.curva_dinamica = datos_db.get('curva_tallas') if datos_db.get('curva_tallas') else []
 
         cats = ["Seleccionar...", "Pantalón", "Falda", "Blusa", "Casaca", "Polo"]
         ests = ["Seleccionar...", "Skinny", "Mom Fit", "Oversize", "Straight", "Slim"]
@@ -148,10 +147,10 @@ if modulo == "👗 Diseño":
         with st.container(border=True):
             st.subheader("3. Telas e Insumos")
             
-            # --- MODIFICACIÓN: LISTA DE TELAS DINÁMICA ---
+            # --- SECCIÓN TELAS DINÁMICA ---
             st.write("**🧵 Detalle de Telas (Consumo Estimado):**")
-            telas_catalog = ["Seleccionar...", "Denim 12oz", "Denim 10oz", "Gabardina", "Jersey", "Tocuyo", "Popelina (Forro)"]
             
+            # Mostrar telas agregadas
             if st.session_state.telas_temp:
                 for idx, t in enumerate(st.session_state.telas_temp):
                     tcol1, tcol2, tcol3 = st.columns([3, 1, 0.5])
@@ -163,18 +162,19 @@ if modulo == "👗 Diseño":
             
             if not st.session_state.bloquear and not ya_enviado:
                 with st.expander("➕ Añadir Tela (Principal o Secundaria)"):
+                    telas_ops = ["Seleccionar...", "Denim 12oz", "Denim 10oz", "Gabardina", "Jersey", "Tocuyo", "Popelina"]
                     at1, at2, at3 = st.columns([2, 1, 1])
-                    nt = at1.selectbox("Seleccionar Tela", telas_catalog, key="ntela")
-                    tt = at2.selectbox("Uso", ["Principal", "Secundaria", "Forro"], key="ttipo")
-                    ct = at3.number_input("Cant. (mts)", min_value=0.0, step=0.05, format="%.2f", key="ncant")
-                    if st.button("Agregar Tela a la Lista"):
-                        if nt != "Seleccionar...":
+                    nt = at1.selectbox("Nombre de Tela", telas_ops, key="ntela_v1")
+                    tt = at2.selectbox("Tipo", ["Principal", "Secundaria"], key="ttipo_v1")
+                    ct = at3.number_input("Cantidad", min_value=0.0, step=0.1, key="ncant_v1")
+                    if st.button("Agregar Tela"):
+                        if nt != "Seleccionar..." and ct > 0:
                             st.session_state.telas_temp.append({"nombre": nt, "tipo": tt, "cantidad": ct})
                             st.rerun()
 
             st.divider()
             
-            # --- INSUMOS (SE MANTIENE IGUAL) ---
+            # --- SECCIÓN INSUMOS ---
             try:
                 res_mats = supabase.table("almacen_insumos").select("nombre, precio_unitario").execute()
                 opciones_mats = [m['nombre'] for m in res_mats.data] if res_mats.data else []
@@ -185,24 +185,36 @@ if modulo == "👗 Diseño":
                 st.write("**📦 Detalle de Insumos:**")
                 for idx, item in enumerate(st.session_state.insumos_temp):
                     icol1, icol2, icol3, icol4 = st.columns([3, 1, 1, 0.5])
-                    icol1.write(f"🔹 {item.get('codigo')}")
-                    icol2.write(f"{item.get('cantidad')} unid.")
-                    icol3.write(f"${item.get('precio', 0.0):.2f}")
+                    icol1.write(f"🔹 {item.get('codigo', 'S/N')}")
+                    icol2.write(f"{item.get('cantidad', 0)} unid.")
+                    icol3.write(f"${float(item.get('precio', 0.0)):.2f}")
                     if not st.session_state.bloquear and not ya_enviado:
                         if icol4.button("🗑️", key=f"del_ins_{idx}"):
                             st.session_state.insumos_temp.pop(idx); st.rerun()
 
-            total_insumos = sum(float(item.get('cantidad', 0)) * float(item.get('precio', 0.0)) for item in st.session_state.insumos_temp)
+            # Cálculo de costo seguro (evita el TypeError de la imagen)
+            total_insumos = 0.0
+            for item in st.session_state.insumos_temp:
+                try:
+                    c = float(item.get('cantidad', 0))
+                    p = float(item.get('precio', 0.0))
+                    total_insumos += (c * p)
+                except: pass
+            
             st.metric("COSTO TOTAL INSUMOS", f"${total_insumos:.2f}")
 
             if not st.session_state.bloquear and not ya_enviado:
                 with st.expander("➕ Añadir Material de Almacén"):
                     f1, f2, f3 = st.columns([2, 1, 1])
                     ins_nom = f1.selectbox("Seleccionar Insumo", ["Buscar..."] + opciones_mats)
-                    ins_cant = f2.number_input("Cantidad", min_value=0.0)
+                    ins_cant = f2.number_input("Cantidad Insumo", min_value=0.0)
                     if f3.button("Agregar Insumo"):
                         if ins_nom != "Buscar...":
-                            st.session_state.insumos_temp.append({"codigo": ins_nom, "cantidad": ins_cant, "precio": precios_mats.get(ins_nom, 0.0)})
+                            st.session_state.insumos_temp.append({
+                                "codigo": ins_nom, 
+                                "cantidad": ins_cant, 
+                                "precio": precios_mats.get(ins_nom, 0.0)
+                            })
                             st.rerun()
 
         with st.container(border=True):
@@ -211,7 +223,7 @@ if modulo == "👗 Diseño":
                 tc1, tc2, tc3 = st.columns([2, 2, 1])
                 t_ops = ["Seleccionar...", "26", "28", "30", "32", "34", "36", "S", "M", "L", "XL"]
                 t_sel = tc1.selectbox("Seleccione Talla", t_ops)
-                r_val = tc2.number_input("Piezas (Ratio)", min_value=1, step=1)
+                r_val = tc2.number_input("Ratio", min_value=1, step=1)
                 if tc3.button("➕ Añadir Talla"):
                     if t_sel != "Seleccionar...":
                         st.session_state.curva_dinamica.append({"talla": t_sel, "cantidad": r_val}); st.rerun()
@@ -243,7 +255,7 @@ if modulo == "👗 Diseño":
                     "prioridad": val_prior, "patronista_responsable": val_pat, "observaciones_contra": val_obs_dis, 
                     "desc_prenda": val_desc, "curva_tallas": st.session_state.curva_dinamica,
                     "insumos_detalle": st.session_state.insumos_temp, 
-                    "telas_detalle": st.session_state.telas_temp, # NUEVO: Guardado de lista de telas
+                    "telas_detalle": st.session_state.telas_temp, 
                     "cantidad_paquetes": total_real, "estado": "Borrador"
                 }
                 try:
@@ -251,7 +263,7 @@ if modulo == "👗 Diseño":
                     st.session_state.codigo_actual = cod_id
                     st.session_state.bloquear = True
                     st.success(f"Guardado: {cod_id}"); st.rerun()
-                except Exception as e: st.error(f"Error: {e}")
+                except Exception as e: st.error(f"Error al guardar: {e}")
 
         with b2:
             p_e = st.session_state.bloquear and st.session_state.codigo_actual != "S/C" and not ya_enviado
