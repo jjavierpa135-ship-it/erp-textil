@@ -157,34 +157,65 @@ if modulo == "👗 Diseño":
                 val_rec = st.text_area("Recomendaciones y Observaciones", value=datos_db.get('rec_observaciones', ""), disabled=st.session_state.bloquear or ya_enviado, height=100)
             val_obs_molde = st.text_input("Observaciones de Molde", value=datos_db.get('obs_molde', ""), disabled=st.session_state.bloquear or ya_enviado)
 
-        # --- SECCIÓN 3: TELAS E INSUMOS (ACTUALIZADA) ---
+        # --- SECCIÓN 3: TELAS E INSUMOS (VERSIÓN ROBUSTA) ---
         with st.container(border=True):
             st.subheader("3. Telas e Insumos")
             
             # Carga de telas desde el Maestro de Telas
             try:
-                res_telas = supabase.table("maestro_telas").select("nombre_interno, precio_reposicion_usd").execute()
-                dict_telas = {t['nombre_interno']: float(t['precio_reposicion_usd']) for t in res_telas.data} if res_telas.data else {}
-                opciones_telas = ["Seleccionar..."] + list(dict_telas.keys())
-            except:
-                opciones_telas = ["Seleccionar...", "Error al cargar"]
+                # Intentamos traer todas las columnas para evitar errores de nombre específico
+                res_telas = supabase.table("maestro_telas").select("*").execute()
+                
+                if res_telas.data:
+                    # Buscamos la columna de precio sin importar si tiene tilde o no en la DB
+                    # Esto busca una columna que contenga 'precio' y 'reposicion'
+                    dict_telas = {}
+                    for t in res_telas.data:
+                        nombre = t.get('nombre_interno')
+                        # Intentamos obtener el precio de varias formas posibles
+                        precio = t.get('precio_reposicion_usd') or t.get('precio_reposición_usd') or 0.0
+                        if nombre:
+                            dict_telas[nombre] = float(precio)
+                    
+                    opciones_telas = ["Seleccionar..."] + list(dict_telas.keys())
+                else:
+                    opciones_telas = ["Seleccionar..."]
+                    dict_telas = {}
+            except Exception as e:
+                st.error(f"Error al conectar con Maestro de Telas: {e}")
+                opciones_telas = ["Seleccionar...", "Error de Conexión"]
                 dict_telas = {}
-
+        
             # Bloque de Tela Principal
             st.write("**Tela Principal (Cuerpo)**")
             ctp1, ctp2, ctp3 = st.columns([2, 1, 1])
             val_t1 = ctp1.selectbox("Seleccionar Tela", opciones_telas, index=obtener_indice(opciones_telas, datos_db.get('tela_1')), key="t1_sel", disabled=st.session_state.bloquear or ya_enviado)
-            cant_t1 = ctp2.number_input("Consumo (m)", min_value=0.0, value=float(datos_db.get('consumo_t1', 1.20)), key="t1_cant", disabled=st.session_state.bloquear or ya_enviado)
+            
+            # Aseguramos que el consumo sea un número válido
+            try:
+                val_cons_t1 = float(datos_db.get('consumo_t1', 1.20))
+            except:
+                val_cons_t1 = 1.20
+        
+            cant_t1 = ctp2.number_input("Consumo (m)", min_value=0.0, value=val_cons_t1, key="t1_cant", disabled=st.session_state.bloquear or ya_enviado)
             costo_t1 = dict_telas.get(val_t1, 0.0) * cant_t1
             ctp3.metric("Subtotal Tela", f"${costo_t1:.2f}")
-
+        
             # Bloque de Tela Secundaria
             st.write("**Tela Complemento (Forros/Combinación)**")
             cts1, cts2, cts3 = st.columns([2, 1, 1])
             val_t2 = cts1.selectbox("Seleccionar Tela Secund.", opciones_telas, index=obtener_indice(opciones_telas, datos_db.get('tela_2')), key="t2_sel", disabled=st.session_state.bloquear or ya_enviado)
-            cant_t2 = cts2.number_input("Consumo Sec. (m)", min_value=0.0, value=float(datos_db.get('consumo_t2', 0.0)), key="t2_cant", disabled=st.session_state.bloquear or ya_enviado)
+            
+            try:
+                val_cons_t2 = float(datos_db.get('consumo_t2', 0.0))
+            except:
+                val_cons_t2 = 0.0
+        
+            cant_t2 = cts2.number_input("Consumo Sec. (m)", min_value=0.0, value=val_cons_t2, key="t2_cant", disabled=st.session_state.bloquear or ya_enviado)
             costo_t2 = dict_telas.get(val_t2, 0.0) * cant_t2
             cts3.metric("Subtotal Sec.", f"${costo_t2:.2f}")
+            
+ 
 
             st.divider()
 
