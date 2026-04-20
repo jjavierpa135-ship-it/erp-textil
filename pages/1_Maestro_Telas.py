@@ -8,48 +8,64 @@ try:
 except Exception as e:
     st.error(f"Error de conexión: {e}"); st.stop()
 
+st.set_page_config(page_title="Maestro de Telas", page_icon="🧵", layout="wide")
 st.title("🧵 Maestro de Telas")
 
-# --- 2. FORMULARIO ---
+# --- 2. FORMULARIO DE INGRESO ---
 with st.expander("➕ Registrar Nueva Tela", expanded=True):
-    with st.form("form_telas"):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            nombre = st.text_input("Nombre Interno").upper()
-            prov = st.text_input("Proveedor")
-        with c2:
-            comp = st.text_input("Composición")
-            # Cambiamos 'ancho_util' por 'ancho' si prefieres nombres cortos en tu DB
-            ancho_val = st.number_input("Ancho Útil (m)", min_value=0.0, value=1.50)
-        with c3:
-            precio_val = st.number_input("Precio USD/m", min_value=0.0)
-            guardar = st.form_submit_button("Guardar en Maestro")
+    with st.form("form_telas", clear_on_submit=True):
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            nombre = st.text_input("Nombre Interno (ID)", placeholder="Ej: FURIOSO").upper()
+            tipo_tela = st.text_input("Tipo de Tela", placeholder="Ej: Denim, Gabardina")
+            composicion = st.text_input("Composición")
+        
+        with col2:
+            cod_prov = st.text_input("Código de Proveedor")
+            desc_prov = st.text_area("Descripción de Proveedor", height=68)
+            prov_frec = st.text_input("Proveedor Frecuente")
+            
+        with col3:
+            peso = st.number_input("Peso (oz)", min_value=0.0, step=0.1)
+            precio = st.number_input("Precio Reposición (USD)", min_value=0.0, step=0.01)
+            moneda = st.selectbox("Moneda", ["USD", "ARS", "EUR"])
+            st.write("") 
+            enviar = st.form_submit_button("Guardar en Base de Datos", use_container_width=True)
 
-        if guardar:
+        if enviar:
             if nombre:
-                # IMPORTANTE: Los nombres a la izquierda deben ser IGUALES a los de Supabase
-                datos = {
+                # Mapeo exacto a las columnas de tu imagen de Supabase
+                payload = {
                     "nombre_interno": nombre,
-                    "proveedor": prov,
-                    "composicion": comp,
-                    "ancho_util": ancho_val, # Verifica que en Supabase se llame así
-                    "precio_reposicion_usd": precio_val
+                    "codigo_proveedor": cod_prov,
+                    "descripcion_proveedor": desc_prov,
+                    "tipo_tela": tipo_tela,
+                    "peso_oz": peso,
+                    "composicion": composicion,
+                    "proveedor_frecuente": prov_frec,
+                    "precio_reposición_usd": precio, # Nota: Verifica si lleva tilde en Supabase. Si falla, quita la tilde a 'reposición'
+                    "moneda": moneda,
+                    "fecha_registro": datetime.datetime.now().isoformat()
                 }
-                res = supabase.table("maestro_telas").upsert(datos).execute()
-                st.success("¡Tela guardada!")
-                st.rerun()
+                try:
+                    supabase.table("maestro_telas").upsert(payload).execute()
+                    st.success(f"✅ Tela '{nombre}' registrada con éxito.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error al guardar: {e}")
             else:
-                st.error("Falta el nombre de la tela.")
+                st.warning("El Nombre Interno es obligatorio.")
 
 st.divider()
 
-# --- 3. LISTA ---
-st.subheader("📋 Inventario de Telas")
+# --- 3. TABLA DE CONSULTA ---
+st.subheader("📋 Telas Registradas")
 try:
-    telas = supabase.table("maestro_telas").select("*").execute()
-    if telas.data:
-        st.table(telas.data)
+    res = supabase.table("maestro_telas").select("*").order("nombre_interno").execute()
+    if res.data:
+        st.dataframe(res.data, use_container_width=True)
     else:
-        st.info("No hay telas registradas.")
+        st.info("No hay datos.")
 except Exception as e:
-    st.error(f"Error al cargar: {e}")
+    st.error(f"Error al cargar lista: {e}")
