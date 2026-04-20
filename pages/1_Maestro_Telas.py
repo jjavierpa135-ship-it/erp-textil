@@ -35,7 +35,7 @@ with st.expander("➕ Registrar Nueva Tela", expanded=True):
 
         if enviar:
             if nombre:
-                # Mapeo exacto a las columnas de tu imagen de Supabase
+                # MAPEO CORREGIDO SIN TILDES PARA EVITAR ERRORES DE SCHEMA CACHE
                 payload = {
                     "nombre_interno": nombre,
                     "codigo_proveedor": cod_prov,
@@ -44,7 +44,7 @@ with st.expander("➕ Registrar Nueva Tela", expanded=True):
                     "peso_oz": peso,
                     "composicion": composicion,
                     "proveedor_frecuente": prov_frec,
-                    "precio_reposición_usd": precio, # Nota: Verifica si lleva tilde en Supabase. Si falla, quita la tilde a 'reposición'
+                    "precio_reposicion_usd": precio, # Se quitó la tilde aquí
                     "moneda": moneda,
                     "fecha_registro": datetime.datetime.now().isoformat()
                 }
@@ -53,7 +53,8 @@ with st.expander("➕ Registrar Nueva Tela", expanded=True):
                     st.success(f"✅ Tela '{nombre}' registrada con éxito.")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error al guardar: {e}")
+                    # Si sigue fallando por la tilde, este mensaje te lo dirá
+                    st.error(f"Error técnico: {e}")
             else:
                 st.warning("El Nombre Interno es obligatorio.")
 
@@ -66,6 +67,6 @@ try:
     if res.data:
         st.dataframe(res.data, use_container_width=True)
     else:
-        st.info("No hay datos.")
+        st.info("No hay datos registrados aún.")
 except Exception as e:
     st.error(f"Error al cargar lista: {e}")
