@@ -1,68 +1,76 @@
 import streamlit as st
 from supabase import create_client, Client
 
-# 1. Conexión
+# 1. Conexión (Asegúrate de que esto esté correcto)
 url: str = st.secrets["supabase_url"]
 key: str = st.secrets["supabase_key"]
 supabase: Client = create_client(url, key)
 
-st.set_page_config(page_title="ERP Textil - Telas", layout="wide")
+st.set_page_config(page_title="ERP Textil", layout="wide")
 
-# Menu lateral para navegar entre maestros
-menu = st.sidebar.selectbox("Seleccionar Maestro", ["Proveedores", "Telas"])
+# --- NAVEGACIÓN LATERAL ---
+st.sidebar.title("Navegación")
+# Aquí definimos las opciones del menú
+menu = st.sidebar.radio("Ir a:", ["🏢 Proveedores", "🧶 Telas"])
 
-if menu == "Proveedores":
-    st.title("📋 Gestión de Proveedores")
-    # ... (Aquí va el código de proveedores que ya probaste)
-    # Por ahora, para avanzar, pasemos al de Telas que es el nuevo
-    st.info("Ya probamos que este funciona, ¡vamos a las Telas!")
+# --- LÓGICA DE PÁGINAS ---
 
-elif menu == "Telas":
-    st.title("🧶 Maestro de Telas")
+if menu == "🏢 Proveedores":
+    st.title("Gestión de Proveedores")
+    
+    # Formulario de Registro
+    with st.expander("➕ Registrar Nuevo Proveedor", expanded=True):
+        with st.form("form_registro_prov", clear_on_submit=True):
+            c1, c2 = st.columns(2)
+            razon = c1.text_input("Razón Social*")
+            ruc = c1.text_input("RUC*")
+            tipo = c2.selectbox("Tipo", ["Telas", "Avíos", "Lavandería", "Taller"])
+            cont = c2.text_input("Contacto")
+            
+            if st.form_submit_button("Guardar Proveedor"):
+                if razon and ruc:
+                    supabase.table("proveedores").insert({
+                        "razon_social": razon, 
+                        "ruc": ruc, 
+                        "tipo_proveedor": tipo, 
+                        "contacto": cont
+                    }).execute()
+                    st.success("✅ Guardado con éxito")
+                    st.rerun()
 
-    # Obtener la lista de proveedores para el selector
+    # Mostrar Tabla de Proveedores
+    st.subheader("Lista de Proveedores")
+    res = supabase.table("proveedores").select("*").execute()
+    if res.data:
+        st.dataframe(res.data, use_container_width=True)
+
+elif menu == "🧶 Telas":
+    st.title("Maestro de Telas")
+    
+    # Primero verificamos si hay proveedores
     res_prov = supabase.table("proveedores").select("id_proveedor, razon_social").execute()
-    opciones_proveedores = {p['razon_social']: p['id_proveedor'] for p in res_prov.data}
+    
+    if not res_prov.data:
+        st.error("🚨 ERROR: No hay proveedores registrados.")
+        st.info("Por favor, selecciona '🏢 Proveedores' en el menú de la izquierda y registra uno primero.")
+    else:
+        # Si hay proveedores, mostramos el formulario de telas
+        dict_prov = {p['razon_social']: p['id_proveedor'] for p in res_prov.data}
+        
+        with st.expander("➕ Registrar Nueva Tela"):
+            with st.form("form_telas"):
+                nombre_t = st.text_input("Nombre de Tela*")
+                p_elegido = st.selectbox("Seleccionar Proveedor", options=list(dict_prov.keys()))
+                
+                if st.form_submit_button("Guardar Tela"):
+                    supabase.table("telas").insert({
+                        "nombre_interno": nombre_t, 
+                        "id_proveedor": dict_prov[p_elegido]
+                    }).execute()
+                    st.success("✅ Tela guardada")
+                    st.rerun()
 
-    with st.expander("➕ Registrar Nueva Tela", expanded=True):
-        with st.form("form_telas", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                nombre_tela = st.text_input("Nombre de la Tela (Interno)*")
-                id_prov = st.selectbox("Proveedor", options=list(opciones_proveedores.keys()))
-                tipo_tela = st.selectbox("Tipo de Tela", ["Confort", "Stretch", "Rígido", "Punto"])
-            
-            with col2:
-                peso = st.number_input("Peso (Onzas)", min_value=0.0, step=0.1)
-                composicion = st.text_input("Composición (ej: 98% Algodón, 2% Elastano)")
-                precio = st.number_input("Precio Referencial", min_value=0.0)
-                moneda = st.radio("Moneda", ["Soles", "Dólares"], horizontal=True)
-
-            btn_tela = st.form_submit_button("Guardar Tela")
-
-            if btn_tela:
-                if nombre_tela:
-                    nueva_tela = {
-                        "nombre_interno": nombre_tela,
-                        "id_proveedor": opciones_proveedores[id_prov],
-                        "tipo_tela": tipo_tela,
-                        "peso_onzas": peso,
-                        "composicion": composicion,
-                        "precio_referencial": precio,
-                        "moneda": moneda
-                    }
-                    try:
-                        supabase.table("telas").insert(nueva_tela).execute()
-                        st.success(f"✅ Tela '{nombre_tela}' registrada.")
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-                else:
-                    st.warning("El nombre de la tela es obligatorio.")
-
-    # Listado de Telas
-    st.divider()
-    st.subheader("📋 Inventario de Telas (Catálogo)")
-    res_telas = supabase.table("telas").select("*, proveedores(razon_social)").execute()
-    if res_telas.data:
-        st.dataframe(res_telas.data, use_container_width=True)
+        # Mostrar Tabla de Telas
+        res_t = supabase.table("telas").select("*, proveedores(razon_social)").execute()
+        if res_t.data:
+            st.dataframe(res_t.data, use_container_width=True)
